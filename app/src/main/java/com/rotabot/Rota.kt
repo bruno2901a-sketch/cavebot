@@ -8,15 +8,15 @@ import android.os.SystemClock
 // Referência: tela 2460 px de largura. Posições são frações da tela,
 // então funcionam em qualquer resolução.
 object Cal {
-    const val MINIMAPA_X0 = 0.850f
+    const val MINIMAPA_X0 = 0.843f
     const val MINIMAPA_Y0 = 0.100f
     const val MINIMAPA_X1 = 0.995f
     const val MINIMAPA_Y1 = 0.625f
 
-    const val BATALHA_X0 = 0.000f
-    const val BATALHA_Y0 = 0.105f
-    const val BATALHA_X1 = 0.160f
-    const val BATALHA_Y1 = 0.790f
+    const val BATALHA_X0 = 0.050f   // só dentro do painel "Batalha" (lista de monstros)
+    const val BATALHA_Y0 = 0.210f
+    const val BATALHA_X1 = 0.180f
+    const val BATALHA_Y1 = 0.680f
 
     const val CHEGOU_FRAC = 0.012f   // distância até o centro do minimapa para considerar chegada
     const val LIMIAR = 0.75f         // correlação mínima (1.0 = igual). Abaixo disso não é o pino.
@@ -38,7 +38,7 @@ object Rota {
 
     fun carregar(ctx: Context, larguraTela: Int) {
         val escala = larguraTela / 2460f
-        val lado = (32 * escala).toInt().coerceAtLeast(8)
+        val lado = (26 * escala).toInt().coerceAtLeast(8)
         modelos = (1..Cal.TOTAL_ICONES).map { n ->
             val raw = ctx.assets.open("pins/p%02d.png".format(n)).use { BitmapFactory.decodeStream(it) }
             Modelo(n, Bitmap.createScaledBitmap(raw, lado, lado, true))
@@ -107,7 +107,7 @@ object Rota {
                 val r = (p shr 16) and 0xFF
                 val g = (p shr 8) and 0xFF
                 val b = p and 0xFF
-                if (g > 190 && r < 120 && b < 120) verdes++
+                if (g > 110 && r < 60 && b < 60) verdes++   // barra de vida do monstro (verde escuro)
                 x += 3
             }
             y += 3
