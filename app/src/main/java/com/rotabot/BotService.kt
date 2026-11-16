@@ -76,6 +76,9 @@ class BotService : Service() {
     private fun prepararCaptura(resultado: Int, dados: Intent) {
         val gerente = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         projecao = gerente.getMediaProjection(resultado, dados)
+        projecao?.registerCallback(object : MediaProjection.Callback() {
+            override fun onStop() { estado = "captura encerrada" }
+        }, handler)
 
         val metrics = DisplayMetrics()
         (getSystemService(Context.WINDOW_SERVICE) as WindowManager)
