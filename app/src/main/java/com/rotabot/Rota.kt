@@ -37,3 +37,121 @@ object Rota {
 
     fun carregar(ctx: Context, larguraTela: Int) {
         val escala = larguraTela / 2460f
+        val lado = (32 * escala).toInt().coerceAtLeast(8)
+        modelos = (1..Cal.TOTAL_ICONES).map { n ->
+            val raw = ctx.assets.open("pins/p%02d.png".format(n)).use { BitmapFactory.decodeStream(it) }
+            Modelo(n, Bitmap.createScaledBitmap(raw, lado, lado, true))
+        }
+    }
+
+    fun configurar(novoInicio: Int, novoFim: Int) {
+        inicio = novoInicio.coerceIn(1, Cal.TOTAL_ICONES)
+        fim = novoFim.coerceIn(inicio, Cal.TOTAL_ICONES)
+        alvo = 0
+        ultimoClique = 0L
+    }
+
+    fun resetar() { alvo = 0; ultimoClique = 0L }
+
+    /** Uma leitura. Retorna o estado para mostrar na notificação. */
+    fun passo(tela: Bitmap, tocar: (Float, Float) -> Unit): String {
+        if (temMonstro(tela)) return "LUTA (pausado)"
+
+        val tamanho = fim - inicio + 1
+        if (alvo >= tamanho) {
+            alvo = 0                          // acabou a hunt: recomeça do primeiro
+            ultimoClique = 0L
+        }
+
+        val x0 = (tela.width * Cal.MINIMAPA_X0).toInt()
+        val y0 = (tela.height * Cal.MINIMAPA_Y0).toInt()
+        val x1 = (tela.width * Cal.MINIMAPA_X1).toInt()
+        val y1 = (tela.height * Cal.MINIMAPA_Y1).toInt()
+        val cx = (x0 + x1) / 2f
+        val cy = (y0 + y1) / 2f
+
+        val indice = inicio + alvo
+        val modelo = modelos.firstOrNull { it.indice == indice }
+            ?: return "SEM ÍCONE $indice"
+        val pos = achar(tela, x0, y0, x1, y1, modelo.bmp)
+            ?: return "PROCURANDO pino $indice (${alvo + 1}/$tamanho)"
+
+        val dist = Math.hypot((pos.first - cx).toDouble(), (pos.second - cy).toDouble()).toFloat()
+        if (dist <= tela.width * Cal.CHEGOU_FRAC) {
+            alvo++
+            ultimoClique = 0L
+            return "CHEGOU no pino $indice"
+        }
+
+        val agora = SystemClock.uptimeMillis()
+        if (agora - ultimoClique >= Cal.INTERVALO_CLIQUE) {
+            tocar(pos.first.toFloat(), pos.second.toFloat())
+            ultimoClique = agora
+        }
+        return "INDO ao pino $indice (${alvo + 1}/$tamanho)"
+    }
+
+    /** Monstro na lista de batalha = barras de vida verdes dentro da área da lista. */
+    fun temMonstro(tela: Bitmap): Boolean {
+        val x0 = (tela.width * Cal.BATALHA_X0).toInt()
+        val y0 = (tela.height * Cal.BATALHA_Y0).toInt()
+        val x1 = (tela.width * Cal.BATALHA_X1).toInt()
+        val y1 = (tela.height * Cal.BATALHA_Y1).toInt()
+        var verdes = 0
+        var y = y0
+        while (y < y1) {
+            var x = x0
+            while (x < x1) {
+                val p = tela.getPixel(x, y)
+                val r = (p shr 16) and 0xFF
+                val g = (p shr 8) and 0xFF
+                val b = p and 0xFF
+                if (g > 190 && r < 120 && b < 120) verdes++
+                x += 3
+            }
+            y += 3
+        }
+        return verdes > 25
+    }
+
+    /** Busca o ícone na região do minimapa. Retorna o centro do melhor encaixe. */
+    private fun achar(tela: Bitmap, x0: Int, y0: Int, x1: Int, y1: Int, m: Bitmap): Pair<Int, Int>? {
+        val w = m.width
+        val h = m.height
+        val mg = gray(m)
+        val ref = w * h * 255f * 255f
+        var melhor = -1f
+        var mx = 0
+        var my = 0
+        var y = y0
+        while (y + h < y1) {
+            var x = x0
+            while (x + w < x1) {
+                var soma = 0f
+                var j = 0
+                for (yy in 0 until h) for (xx in 0 until w) {
+                    val p = tela.getPixel(x + xx, y + yy)
+                    val g = (((p shr 16) and 0xFF) * 299 + ((p shr 8) and 0xFF) * 587 + (p and 0xFF) * 114) / 1000
+                    val d = (g - mg[j]).toFloat()
+                    soma += d * d
+                    j++
+                }
+                val score = 1f - soma / ref
+                if (score > melhor) { melhor = score; mx = x + w / 2; my = y + h / 2 }
+                x += 2
+            }
+            y += 2
+        }
+        return if (melhor >= Cal.LIMIAR) Pair(mx, my) else null
+    }
+
+    private fun gray(b: Bitmap): IntArray {
+        val out = IntArray(b.width * b.height)
+        var i = 0
+        for (yy in 0 until b.height) for (xx in 0 until b.width) {
+            val p = b.getPixel(xx, yy)
+            out[i++] = (((p shr 16) and 0xFF) * 299 + ((p shr 8) and 0xFF) * 587 + (p and 0xFF) * 114) / 1000
+        }
+        return out
+    }
+}
