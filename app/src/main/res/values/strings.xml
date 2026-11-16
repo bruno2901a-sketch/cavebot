@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="descricao_acessibilidade">Envia toques na tela do jogo para o RotaBot andar entre os pinos.</string>
+</resources>
