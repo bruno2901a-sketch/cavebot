@@ -32,6 +32,8 @@ class BotService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private var rodando = false
     private var estado = "parado"
+    private val trabalho = java.util.concurrent.Executors.newSingleThreadExecutor()
+    @Volatile private var ocupado = false
 
     private var janela: WindowManager? = null
     private var botao: Button? = null
@@ -39,12 +41,19 @@ class BotService : Service() {
     private val ciclo = object : Runnable {
         override fun run() {
             if (!rodando) return
-            try {
-                lerTela()
-            } catch (e: Exception) {
-                estado = "erro: ${e.javaClass.simpleName}"
+            if (!ocupado) {
+                ocupado = true
+                trabalho.execute {
+                    try {
+                        lerTela()
+                    } catch (e: Exception) {
+                        estado = "erro: ${e.javaClass.simpleName}"
+                    } finally {
+                        ocupado = false
+                    }
+                    handler.post { atualizarNotificacao() }
+                }
             }
-            atualizarNotificacao()
             handler.postDelayed(this, INTERVALO_LEITURA_MS)
         }
     }
