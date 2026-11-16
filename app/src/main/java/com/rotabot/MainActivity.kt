@@ -11,6 +11,7 @@ import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 
 class MainActivity : Activity() {
 
@@ -109,6 +110,10 @@ class MainActivity : Activity() {
         val inicio = campoInicio.text.toString().toIntOrNull() ?: 1
         val fim = campoFim.text.toString().toIntOrNull() ?: 5
         val dados = dadosCaptura
+        if (dados == null) {
+            Toast.makeText(this, "Antes, toque em 3) Permitir captura e aceite.", Toast.LENGTH_LONG).show()
+            return
+        }
         val intent = Intent(this, BotService::class.java)
             .setAction(BotService.ACAO_INICIAR)
             .putExtra("inicio", inicio)
