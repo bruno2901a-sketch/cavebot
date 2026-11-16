@@ -174,7 +174,7 @@ class BotService : Service() {
             estado = if (toque == null) {
                 "ative a acessibilidade do RotaBot"
             } else {
-                Rota.passo(bmp) { x, y -> toque.tocar(x, y) }
+                Rota.passo(bmp) { x, y -> toque.tocar(x, y) } + " | " + ToqueService.resultado
             }
         } finally {
             imagem.close()
