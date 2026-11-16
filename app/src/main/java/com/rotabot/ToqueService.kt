@@ -37,3 +37,13 @@ class ToqueService : AccessibilityService() {
             }
             override fun onCancelled(g: GestureDescription?) {
                 resultado = "toque cancelado em ${x.toInt()},${y.toInt()}"
+            }
+        }, null)
+        if (!aceitou) resultado = "sistema recusou o toque"
+    }
+
+    companion object {
+        @Volatile var instancia: ToqueService? = null
+        @Volatile var resultado = "nenhum toque ainda"
+    }
+}
