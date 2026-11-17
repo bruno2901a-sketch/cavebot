@@ -18,6 +18,7 @@ import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
 import android.provider.Settings
@@ -47,6 +48,8 @@ class BotService : Service() {
     }
 
     private val handler = Handler(Looper.getMainLooper())
+    private lateinit var workerThread: HandlerThread
+    private lateinit var workerHandler: Handler
     private var projection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
@@ -77,12 +80,14 @@ class BotService : Service() {
         override fun run() {
             if (!rodando) return
             executarCiclo()
-            handler.postDelayed(this, 450L)
+            workerHandler.postDelayed(this, 450L)
         }
     }
 
     override fun onCreate() {
         super.onCreate()
+        workerThread = HandlerThread("RotaBot-Analise").also { it.start() }
+        workerHandler = Handler(workerThread.looper)
         criarCanal()
     }
 
@@ -139,12 +144,12 @@ class BotService : Service() {
         try {
             val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             projection = manager.getMediaProjection(resultCode, data)
-            projection?.registerCallback(projectionCallback, handler)
+            projection?.registerCallback(projectionCallback, workerHandler)
             imageReader = ImageReader.newInstance(largura, altura, PixelFormat.RGBA_8888, 2)
             virtualDisplay = projection?.createVirtualDisplay(
                 "RotaBotScreenCapture", largura, altura, densidade,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                imageReader?.surface, null, handler
+                imageReader?.surface, null, workerHandler
             )
             if (virtualDisplay == null) {
                 pararTudo("Não foi possível iniciar a captura da tela.")
@@ -334,7 +339,7 @@ class BotService : Service() {
                     pausaManual = false
                     pausado = false
                     isEnabled = false
-                    handler.post(ciclo)
+                    workerHandler.post(ciclo)
                     atualizarBotao()
                 }
             }
@@ -398,12 +403,14 @@ class BotService : Service() {
     }
 
     private fun atualizarBotao() {
-        val painel = overlay ?: return
-        val iniciar = painel.getChildAt(0) as? Button
-        val toggle = painel.getChildAt(1) as? Button
-        iniciar?.isEnabled = !rotaIniciada
-        toggle?.isEnabled = rotaIniciada
-        toggle?.text = if (pausaManual) "Retomar" else if (batalhaDetectada) "Em batalha" else "Pausar"
+        handler.post {
+            val painel = overlay ?: return@post
+            val iniciar = painel.getChildAt(0) as? Button
+            val toggle = painel.getChildAt(1) as? Button
+            iniciar?.isEnabled = !rotaIniciada
+            toggle?.isEnabled = rotaIniciada
+            toggle?.text = if (pausaManual) "Retomar" else if (batalhaDetectada) "Em batalha" else "Pausar"
+        }
     }
 
     private fun iniciarNotificacao() {
@@ -431,7 +438,7 @@ class BotService : Service() {
         pausado = false
         pausaManual = false
         batalhaDetectada = false
-        handler.removeCallbacks(ciclo)
+        workerHandler.removeCallbacks(ciclo)
         try {
             val wm = getSystemService(WINDOW_SERVICE) as WindowManager
             overlay?.let { wm.removeView(it) }
@@ -447,14 +454,15 @@ class BotService : Service() {
         ultimoFrame?.recycle()
         ultimoFrame = null
         Rota.limpar()
-        if (mensagem.isNotBlank()) Toast.makeText(this, mensagem, Toast.LENGTH_LONG).show()
+        if (mensagem.isNotBlank()) handler.post { Toast.makeText(this, mensagem, Toast.LENGTH_LONG).show() }
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
     override fun onDestroy() {
         rodando = false
-        handler.removeCallbacks(ciclo)
+        workerHandler.removeCallbacks(ciclo)
+        workerThread.quitSafely()
         super.onDestroy()
     }
 
