@@ -29,6 +29,7 @@ import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.Toast
+import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import kotlin.math.abs
 import kotlin.math.sqrt
@@ -54,6 +55,8 @@ class BotService : Service() {
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
     private var overlay: LinearLayout? = null
+    private var statusView: TextView? = null
+    @Volatile private var statusAtual = "Aguardando início"
     @Volatile private var rodando = false
     @Volatile private var rotaIniciada = false
     @Volatile private var pausado = false
@@ -155,7 +158,9 @@ class BotService : Service() {
                 pararTudo("Não foi possível iniciar a captura da tela.")
                 return
             }
-            Rota.carregarPins(this, inicio, fim)
+            val pinsCarregados = Rota.carregarPins(this, inicio, fim)
+            if (pinsCarregados.isEmpty()) { pararTudo("Não encontrei os arquivos dos marcadores selecionados."); return }
+            statusAtual = "Captura pronta. Toque em Iniciar rota."
             indicePin = 0
             pinAcionado = false
             rodando = false
@@ -173,7 +178,7 @@ class BotService : Service() {
 
     private fun executarCiclo() {
         if (processando) return
-        val image = try { imageReader?.acquireLatestImage() } catch (_: Exception) { null } ?: return
+        val image = try { imageReader?.acquireLatestImage() } catch (e: Exception) { registrarStatus("Falha na captura: ${e.message}"); null } ?: run { registrarStatus("Aguardando imagem da tela..."); return }
         val frame = try {
             val plane = image.planes[0]
             val buffer = plane.buffer
@@ -204,15 +209,15 @@ class BotService : Service() {
         battle.recycle()
         pausado = pausaManual || batalhaDetectada
         atualizarBotao()
-        if (pausado) return
+        if (pausado) { registrarStatus(if (pausaManual) "Pausado manualmente" else "Pausado: batalha detectada"); return }
 
         val pins = Rota.obterPins()
-        if (pins.isEmpty()) return
+        if (pins.isEmpty()) { registrarStatus("Nenhum marcador carregado."); return }
         val mapRect = Rect(
             (largura * 0.80f).toInt(), (altura * 0.05f).toInt(),
             (largura * 0.99f).toInt(), (altura * 0.50f).toInt()
         )
-        val minimapa = frame.safeCrop(mapRect) ?: return
+        val minimapa = frame.safeCrop(mapRect) ?: run { registrarStatus("Não consegui recortar o minimapa."); return }
         val pin = pins.getOrNull(indicePin) ?: run { minimapa.recycle(); return }
         val pinPos = localizarTemplate(minimapa, pin.bitmap)
         val jogador = localizarCruzBranca(minimapa)
@@ -229,15 +234,30 @@ class BotService : Service() {
                 processando = true
                 val x = mapRect.left + pinPos.first
                 val y = mapRect.top + pinPos.second
-                val aceito = ToqueService.clicar(x.toFloat(), y.toFloat()) {
+                registrarStatus("Enviando toque para marcador ${indicePin + inicio} em $x,$y...")
+                val aceito = ToqueService.clicar(x.toFloat(), y.toFloat()) { sucesso, mensagem ->
                     processando = false
-                    pinAcionado = true
-                    ultimaAcao = System.currentTimeMillis()
+                    registrarStatus(mensagem)
+                    if (sucesso) {
+                        pinAcionado = true
+                        ultimaAcao = System.currentTimeMillis()
+                    }
                 }
-                if (!aceito) processando = false
+                if (!aceito) {
+                    processando = false
+                    registrarStatus("Android não aceitou o comando. Verifique Acessibilidade.")
+                }
             }
+        } else {
+            registrarStatus(if (jogador == null && pinPos == null) "Não localizei jogador nem marcador no minimapa." else if (jogador == null) "Marcador localizado; não achei a cruz branca do jogador." else "Cruz branca localizada; não achei o marcador selecionado.")
         }
         minimapa.recycle()
+    }
+
+    private fun registrarStatus(mensagem: String) {
+        statusAtual = mensagem
+        RelatorioErro.registrar(this, "Status", mensagem)
+        handler.post { statusView?.text = mensagem }
     }
 
     private fun temIndicadorDeBatalha(bitmap: Bitmap): Boolean {
@@ -330,6 +350,8 @@ class BotService : Service() {
             setPadding(8,8,8,8)
             setBackgroundColor(Color.argb(220, 25, 25, 25))
         }
+        val status = TextView(this).apply { text = statusAtual; setTextColor(Color.WHITE); textSize = 12f; setPadding(8, 4, 8, 8) }
+        statusView = status
         val start = Button(this).apply {
             text = "Iniciar rota"
             setOnClickListener {
@@ -357,6 +379,7 @@ class BotService : Service() {
             text = "Parar"
             setOnClickListener { pararTudo("RotaBot encerrado.") }
         }
+        painel.addView(status)
         painel.addView(start)
         painel.addView(toggle)
         painel.addView(stop)
@@ -405,8 +428,8 @@ class BotService : Service() {
     private fun atualizarBotao() {
         handler.post {
             val painel = overlay ?: return@post
-            val iniciar = painel.getChildAt(0) as? Button
-            val toggle = painel.getChildAt(1) as? Button
+            val iniciar = painel.getChildAt(1) as? Button
+            val toggle = painel.getChildAt(2) as? Button
             iniciar?.isEnabled = !rotaIniciada
             toggle?.isEnabled = rotaIniciada
             toggle?.text = if (pausaManual) "Retomar" else if (batalhaDetectada) "Em batalha" else "Pausar"
@@ -444,6 +467,7 @@ class BotService : Service() {
             overlay?.let { wm.removeView(it) }
         } catch (_: Exception) {}
         overlay = null
+        statusView = null
         virtualDisplay?.release()
         virtualDisplay = null
         imageReader?.close()
