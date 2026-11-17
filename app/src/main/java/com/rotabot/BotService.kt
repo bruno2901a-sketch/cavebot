@@ -255,8 +255,9 @@ class BotService : Service() {
     }
 
     private fun registrarStatus(mensagem: String) {
+        if (statusAtual == mensagem) return
         statusAtual = mensagem
-        RelatorioErro.registrar(this, "Status", mensagem)
+        RelatorioErro.registrar(this, "Status: $mensagem")
         handler.post { statusView?.text = mensagem }
     }
 
