@@ -3,46 +3,74 @@ package com.rotabot
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
+import android.os.Handler
+import android.os.Looper
+import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 
-// Serviço de acessibilidade: envia toques na tela do jogo.
-// Precisa ser ativado em Configurações > Acessibilidade.
 class ToqueService : AccessibilityService() {
 
+    companion object {
+        var instance: ToqueService? = null
+            private set
+
+        fun clicar(x: Float, y: Float, duracaoMs: Long = 65L, callback: (() -> Unit)? = null) {
+            val service = instance
+            if (service == null) {
+                Log.e("ToqueService", "ToqueService não está ativo!")
+                return
+            }
+
+            if (x < 0f || y < 0f) return
+
+            val path = Path().apply {
+                moveTo(x, y)
+            }
+
+            val gestureBuilder = GestureDescription.Builder()
+            val stroke = GestureDescription.StrokeDescription(path, 0L, duracaoMs)
+            gestureBuilder.addStroke(stroke)
+
+            service.dispatchGesture(
+                gestureBuilder.build(),
+                object : GestureResultCallback() {
+                    override fun onCompleted(gestureDescription: GestureDescription?) {
+                        super.onCompleted(gestureDescription)
+                        callback?.invoke()
+                    }
+
+                    override fun onCancelled(gestureDescription: GestureDescription?) {
+                        super.onCancelled(gestureDescription)
+                        Log.w("ToqueService", "Gesto cancelado em ($x, $y)")
+                    }
+                },
+                null
+            )
+        }
+
+        fun duploClique(x: Float, y: Float, intervaloMs: Long = 120L) {
+            clicar(x, y, 50L) {
+                Handler(Looper.getMainLooper()).postDelayed({
+                    clicar(x, y, 50L)
+                }, intervaloMs)
+            }
+        }
+    }
+
     override fun onServiceConnected() {
-        instancia = this
+        super.onServiceConnected()
+        instance = this
+        Log.i("ToqueService", "ToqueService conectado.")
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
-    override fun onInterrupt() {}
+
+    override fun onInterrupt() {
+        Log.w("ToqueService", "ToqueService interrompido.")
+    }
 
     override fun onDestroy() {
-        if (instancia === this) instancia = null
         super.onDestroy()
-    }
-
-    fun tocar(x: Float, y: Float) {
-        // Trajeto com moveTo + lineTo: um Path só com moveTo é cancelado em vários aparelhos.
-        val caminho = Path().apply {
-            moveTo(x, y)
-            lineTo(x + 1f, y)
-        }
-        val gesto = GestureDescription.Builder()
-            .addStroke(GestureDescription.StrokeDescription(caminho, 0, 40))
-            .build()
-        val aceito = dispatchGesture(gesto, object : GestureResultCallback() {
-            override fun onCompleted(g: GestureDescription?) {
-                resultado = "toque ok ${x.toInt()},${y.toInt()}"
-            }
-            override fun onCancelled(g: GestureDescription?) {
-                resultado = "toque cancelado ${x.toInt()},${y.toInt()}"
-            }
-        }, null)
-        if (!aceito) resultado = "toque recusado pelo sistema"
-    }
-
-    companion object {
-        @Volatile var instancia: ToqueService? = null
-        @Volatile var resultado: String = ""
+        instance = null
     }
 }

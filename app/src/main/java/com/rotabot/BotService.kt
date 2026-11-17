@@ -4,239 +4,217 @@ import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.PixelFormat
-import android.hardware.display.DisplayManager
-import android.hardware.display.VirtualDisplay
-import android.media.ImageReader
-import android.media.projection.MediaProjection
-import android.media.projection.MediaProjectionManager
+import android.graphics.Color
+import android.graphics.Rect
 import android.os.Build
 import android.os.Handler
-import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
-import android.util.DisplayMetrics
-import android.view.Gravity
-import android.view.MotionEvent
-import android.view.View
-import android.view.WindowManager
-import android.widget.Button
+import android.util.Log
+import androidx.core.app.NotificationCompat
 
 class BotService : Service() {
 
-    private var projecao: MediaProjection? = null
-    @Volatile private var leitor: ImageReader? = null
-    private var virtual: VirtualDisplay? = null
     private val handler = Handler(Looper.getMainLooper())
-    // A leitura da tela é pesada: roda numa thread própria para não travar o app.
-    private val trabalho = HandlerThread("rotabot-ciclo").apply { start() }
-    private val bg = Handler(trabalho.looper)
-    @Volatile private var rodando = false
-    @Volatile private var estado = "parado"
+    private var rodando = false
+    private var indicePinAtual = 0
 
-    private var janela: WindowManager? = null
-    private var botao: Button? = null
+    // ================= COORDENADAS ESTRITAS (BASEADAS NA SUA PRINT) =================
+    // Batalha no canto SUPERIOR ESQUERDO
+    private val battleLeftPct = 0.02f
+    private val battleTopPct = 0.05f
+    private val battleRightPct = 0.25f
+    private val battleBottomPct = 0.45f
 
-    private val ciclo = object : Runnable {
+    // Minimapa no canto SUPERIOR DIREITO
+    private val minimapLeftPct = 0.80f
+    private val minimapTopPct = 0.05f
+    private val minimapRightPct = 0.99f
+    private val minimapBottomPct = 0.50f
+    // ============================================================================
+
+    companion object {
+        var ultimoFrameCapturado: Bitmap? = null
+    }
+
+    private val loopRunnable = object : Runnable {
         override fun run() {
             if (!rodando) return
-            try {
-                lerTela()
-            } catch (e: Exception) {
-                estado = "erro: ${e.javaClass.simpleName}"
-            }
-            atualizarNotificacao()
-            bg.postDelayed(this, INTERVALO_LEITURA_MS)
+            executarCiclo()
+            handler.postDelayed(this, 350L)
         }
     }
 
     override fun onCreate() {
         super.onCreate()
-        RelatorioErro.instalar(this)
+        iniciarNotificacao()
+        Rota.carregarTodosOsPins(this)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            ACAO_PARAR -> { parar(); stopSelf() }
-            ACAO_INICIAR -> {
-                criarCanal()
-                startForeground(1, notificacao("pronto: toque no botão flutuante"), tipoMidia())
-                Rota.configurar(intent.getIntExtra("inicio", 1), intent.getIntExtra("fim", 5))
-                val resultado = intent.getIntExtra("resultado", 0)
-                val dados = intent.getParcelableExtra<Intent>("dados")
-                if (resultado != 0 && dados != null) prepararCaptura(resultado, dados)
-                criarBotao()
-            }
-        }
-        return START_NOT_STICKY
-    }
-
-    private fun tipoMidia(): Int =
-        if (Build.VERSION.SDK_INT >= 29) android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION else 0
-
-    private fun prepararCaptura(resultado: Int, dados: Intent) {
-        val gerente = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        projecao = gerente.getMediaProjection(resultado, dados)
-        // Android 14+ exige registrar um callback antes de criar a captura.
-        projecao?.registerCallback(object : MediaProjection.Callback() {
-            override fun onStop() {
-                rodando = false
-                bg.removeCallbacks(ciclo)
-                estado = "captura encerrada"
-            }
-        }, handler)
-
-        val metrics = DisplayMetrics()
-        (getSystemService(Context.WINDOW_SERVICE) as WindowManager)
-            .defaultDisplay.getRealMetrics(metrics)
-        val w = metrics.widthPixels
-        val h = metrics.heightPixels
-
-        leitor = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
-        virtual = projecao?.createVirtualDisplay(
-            "rotabot", w, h, metrics.densityDpi,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-            leitor?.surface, null, null
-        )
-        Rota.carregar(this, w)
-    }
-
-    /** Botão flutuante sobre o jogo: toque para ligar/desligar, arraste para mover. */
-    private fun criarBotao() {
-        if (botao != null) return
-        janela = getSystemService(WINDOW_SERVICE) as WindowManager
-        val b = Button(this).apply {
-            text = "▶ RotaBot"
-            setOnClickListener { alternar() }
-        }
-        val tipo = if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-        else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE
-        val params = WindowManager.LayoutParams(
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            WindowManager.LayoutParams.WRAP_CONTENT,
-            tipo,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-            PixelFormat.TRANSLUCENT
-        ).apply { gravity = Gravity.TOP or Gravity.START; x = 20; y = 300 }
-
-        var dx = 0f
-        var dy = 0f
-        var moveu = false
-        b.setOnTouchListener { v, e ->
-            when (e.action) {
-                MotionEvent.ACTION_DOWN -> {
-                    dx = e.rawX - params.x
-                    dy = e.rawY - params.y
-                    moveu = false
-                }
-                MotionEvent.ACTION_MOVE -> {
-                    params.x = (e.rawX - dx).toInt()
-                    params.y = (e.rawY - dy).toInt()
-                    janela?.updateViewLayout(b, params)
-                    moveu = true
-                }
-                MotionEvent.ACTION_UP -> if (!moveu) v.performClick()
-            }
-            true
-        }
-        janela?.addView(b, params)
-        botao = b
-    }
-
-    private fun alternar() {
-        if (rodando) {
-            rodando = false
-            bg.removeCallbacks(ciclo)
-            estado = "pausado"
-        } else {
-            if (leitor == null) { estado = "sem permissão de captura"; return }
-            Rota.resetar()
+        if (!rodando) {
             rodando = true
-            bg.post(ciclo)
+            indicePinAtual = 0
+            handler.post(loopRunnable)
+            Log.i("BotService", "Cavebot iniciado.")
         }
-        botao?.text = if (rodando) "■ Parar" else "▶ RotaBot"
-        atualizarNotificacao()
+        return START_STICKY
     }
 
-    private fun lerTela() {
-        ajustarRotacao()
-        val imagem = leitor?.acquireLatestImage() ?: return
-        try {
-            val plano = imagem.planes[0]
-            val bmp = Bitmap.createBitmap(
-                imagem.width + (plano.rowStride - plano.pixelStride * imagem.width) / plano.pixelStride,
-                imagem.height, Bitmap.Config.ARGB_8888
-            )
-            bmp.copyPixelsFromBuffer(plano.buffer)
-            // tira a sobra de bytes no fim de cada linha, se houver
-            val tela = if (bmp.width != imagem.width) Bitmap.createBitmap(bmp, 0, 0, imagem.width, imagem.height) else bmp
-            val toque = ToqueService.instancia
-            estado = if (toque == null) {
-                "ative a acessibilidade do RotaBot"
+    private fun executarCiclo() {
+        if (ToqueService.instance == null) {
+            Log.w("BotService", "Aguardando ativação do ToqueService...")
+            return
+        }
+
+        val telaAtual: Bitmap = ultimoFrameCapturado ?: return
+        val largura = telaAtual.width
+        val altura = telaAtual.height
+
+        // 1. Verifica APENAS o painel de Batalha (canto superior esquerdo)
+        val rectBatalha = Rect(
+            (largura * battleLeftPct).toInt(),
+            (altura * battleTopPct).toInt(),
+            (largura * battleRightPct).toInt(),
+            (altura * battleBottomPct).toInt()
+        )
+        val recorteBatalha = recortarSeguro(telaAtual, rectBatalha)
+
+        if (recorteBatalha != null && temMonstroNaBatalha(recorteBatalha)) {
+            val alvoX = rectBatalha.centerX().toFloat()
+            val alvoY = (rectBatalha.top + 45).toFloat()
+            ToqueService.clicar(alvoX, alvoY)
+            return
+        }
+
+        // 2. Procura o pin atual na área isolada do Minimapa (canto superior direito)
+        val pins = Rota.obterPins()
+        if (pins.isEmpty()) return
+
+        if (indicePinAtual >= pins.size) {
+            indicePinAtual = 0
+        }
+
+        val pinAlvo = pins[indicePinAtual]
+        val rectMinimapa = Rect(
+            (largura * minimapLeftPct).toInt(),
+            (altura * minimapTopPct).toInt(),
+            (largura * minimapRightPct).toInt(),
+            (altura * minimapBottomPct).toInt()
+        )
+
+        val recorteMinimapa = recortarSeguro(telaAtual, rectMinimapa)
+        if (recorteMinimapa != null) {
+            val pontoEncontrado = encontrarImagemNaArea(recorteMinimapa, pinAlvo.bitmap)
+            if (pontoEncontrado != null) {
+                val cliqueRealX = rectMinimapa.left + pontoEncontrado.first + (pinAlvo.bitmap.width / 2f)
+                val cliqueRealY = rectMinimapa.top + pontoEncontrado.second + (pinAlvo.bitmap.height / 2f)
+
+                Log.d("BotService", "Clicando em ${pinAlvo.nome} -> ($cliqueRealX, $cliqueRealY)")
+                ToqueService.clicar(cliqueRealX, cliqueRealY)
+                indicePinAtual = (indicePinAtual + 1) % pins.size
             } else {
-                Rota.passo(tela) { x, y -> toque.tocar(x, y) }
+                indicePinAtual = (indicePinAtual + 1) % pins.size
             }
-        } finally {
-            imagem.close()
         }
     }
 
-    /** Se o celular girou, recria o leitor com o tamanho novo da tela. */
-    private fun ajustarRotacao() {
-        val atual = leitor ?: return
-        val m = DisplayMetrics()
-        (getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealMetrics(m)
-        if (m.widthPixels == atual.width && m.heightPixels == atual.height) return
-        val novo = ImageReader.newInstance(m.widthPixels, m.heightPixels, PixelFormat.RGBA_8888, 2)
-        virtual?.resize(m.widthPixels, m.heightPixels, m.densityDpi)
-        virtual?.surface = novo.surface
-        leitor = novo
-        atual.close()
-        Rota.carregar(this, m.widthPixels)
+    private fun recortarSeguro(origem: Bitmap, area: Rect): Bitmap? {
+        val left = area.left.coerceIn(0, origem.width - 1)
+        val top = area.top.coerceIn(0, origem.height - 1)
+        val width = (area.right - left).coerceIn(1, origem.width - left)
+        val height = (area.bottom - top).coerceIn(1, origem.height - top)
+        return Bitmap.createBitmap(origem, left, top, width, height)
     }
 
-    private fun parar() {
-        rodando = false
-        bg.removeCallbacks(ciclo)
-        botao?.let { janela?.removeView(it) }
-        botao = null
-        virtual?.release()
-        projecao?.stop()
-        virtual = null
-        projecao = null
-        estado = "parado"
-    }
+    private fun temMonstroNaBatalha(painelBatalha: Bitmap): Boolean {
+        var pixelsBarraHp = 0
+        for (y in 0 until painelBatalha.height step 3) {
+            for (x in 0 until painelBatalha.width step 3) {
+                val pixel = painelBatalha.getPixel(x, y)
+                val r = Color.red(pixel)
+                val g = Color.green(pixel)
+                val b = Color.blue(pixel)
 
-    override fun onDestroy() { parar(); trabalho.quitSafely(); super.onDestroy() }
-    override fun onBind(intent: Intent?): IBinder? = null
+                val ehVerdeVida = (g > 180 && r < 80 && b < 80)
+                val ehVermelhoVida = (r > 180 && g < 70 && b < 70)
 
-    private fun criarCanal() {
-        if (Build.VERSION.SDK_INT >= 26) {
-            val canal = NotificationChannel("rotabot", "RotaBot", NotificationManager.IMPORTANCE_LOW)
-            getSystemService(NotificationManager::class.java).createNotificationChannel(canal)
+                if (ehVerdeVida || ehVermelhoVida) {
+                    pixelsBarraHp++
+                    if (pixelsBarraHp >= 8) return true
+                }
+            }
         }
+        return false
     }
 
-    private fun notificacao(texto: String): Notification {
-        val b = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, "rotabot")
-        else @Suppress("DEPRECATION") Notification.Builder(this)
-        return b.setContentTitle("RotaBot")
-            .setContentText(texto)
+    private fun encontrarImagemNaArea(areaBusca: Bitmap, template: Bitmap): Pair<Int, Int>? {
+        val maxX = areaBusca.width - template.width
+        val maxY = areaBusca.height - template.height
+        if (maxX <= 0 || maxY <= 0) return null
+
+        val centroX = template.width / 2
+        val centroY = template.height / 2
+        val corAlvoCentro = template.getPixel(centroX, centroY)
+
+        for (y in 0..maxY) {
+            for (x in 0..maxX) {
+                val pixelAtual = areaBusca.getPixel(x + centroX, y + centroY)
+                if (coresProximas(pixelAtual, corAlvoCentro, 25)) {
+                    if (validarBlocoCompleto(areaBusca, template, x, y, 30)) {
+                        return Pair(x, y)
+                    }
+                }
+            }
+        }
+        return null
+    }
+
+    private fun validarBlocoCompleto(area: Bitmap, template: Bitmap, startX: Int, startY: Int, tolerancia: Int): Boolean {
+        var acertos = 0
+        var totalAmostras = 0
+        for (ty in 0 until template.height step 2) {
+            for (tx in 0 until template.width step 2) {
+                val pixelTemplate = template.getPixel(tx, ty)
+                if (Color.alpha(pixelTemplate) < 128) continue
+
+                totalAmostras++
+                val pixelArea = area.getPixel(startX + tx, startY + ty)
+                if (coresProximas(pixelArea, pixelTemplate, tolerancia)) {
+                    acertos++
+                }
+            }
+        }
+        return totalAmostras > 0 && (acertos.toFloat() / totalAmostras) >= 0.75f
+    }
+
+    private fun coresProximas(c1: Int, c2: Int, tol: Int): Boolean {
+        return kotlin.math.abs(Color.red(c1) - Color.red(c2)) <= tol &&
+               kotlin.math.abs(Color.green(c1) - Color.green(c2)) <= tol &&
+               kotlin.math.abs(Color.blue(c1) - Color.blue(c2)) <= tol
+    }
+
+    private fun iniciarNotificacao() {
+        val channelId = "cavebot_channel"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val channel = NotificationChannel(channelId, "Cavebot Service", NotificationManager.IMPORTANCE_LOW)
+            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+        }
+        val notification: Notification = NotificationCompat.Builder(this, channelId)
+            .setContentTitle("Cavebot Ativo")
+            .setContentText("Monitorando rota e batalha")
             .setSmallIcon(android.R.drawable.ic_media_play)
-            .setOngoing(true)
             .build()
+        startForeground(1, notification)
     }
 
-    private fun atualizarNotificacao() {
-        getSystemService(NotificationManager::class.java).notify(1, notificacao(estado + " | " + ToqueService.resultado + " | tela " + (leitor?.width ?: 0) + "x" + (leitor?.height ?: 0)))
+    override fun onDestroy() {
+        rodando = false
+        handler.removeCallbacks(loopRunnable)
+        super.onDestroy()
     }
 
-    companion object {
-        const val ACAO_INICIAR = "iniciar"
-        const val ACAO_PARAR = "parar"
-        const val INTERVALO_LEITURA_MS = 1000L
-    }
+    override fun onBind(intent: Intent?): IBinder? = null
 }
