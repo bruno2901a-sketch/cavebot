@@ -161,7 +161,24 @@ class BotService : Service() {
         atualizarNotificacao()
     }
 
+    /** Se o celular girou (retrato <-> paisagem), refaz a captura com o tamanho atual da tela. */
+    private fun garantirTamanho() {
+        val metrics = DisplayMetrics()
+        (getSystemService(Context.WINDOW_SERVICE) as WindowManager)
+            .defaultDisplay.getRealMetrics(metrics)
+        val w = metrics.widthPixels
+        val h = metrics.heightPixels
+        val atual = leitor ?: return
+        if (atual.width == w && atual.height == h) return
+        leitor = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
+        virtual?.setSurface(leitor?.surface)
+        virtual?.resize(w, h, metrics.densityDpi)
+        atual.close()
+        Rota.carregar(this, w)
+    }
+
     private fun lerTela() {
+        garantirTamanho()
         val imagem = leitor?.acquireLatestImage() ?: return
         try {
             val plano = imagem.planes[0]
