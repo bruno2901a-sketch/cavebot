@@ -14,8 +14,7 @@ import android.widget.TextView
 import android.widget.Toast
 
 class MainActivity : Activity() {
-
-    private val CODIGO_CAPTURA = 42
+    private val codigoCaptura = 42
     private var dadosCaptura: Intent? = null
     private var resultadoCaptura = 0
 
@@ -25,102 +24,95 @@ class MainActivity : Activity() {
 
         val tela = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(48, 48, 48, 48)
+            setPadding(36, 36, 36, 36)
         }
-        val erroAnterior = RelatorioErro.ler(this)
-        if (erroAnterior != null) {
-            tela.addView(TextView(this).apply {
-                text = "ERRO DA ÚLTIMA VEZ:\n\n$erroAnterior"
-                textSize = 11f
-            })
-            tela.addView(Button(this).apply {
-                text = "Limpar erro"
-                setOnClickListener {
-                    RelatorioErro.limpar(this@MainActivity)
-                    recreate()
-                }
-            })
+        val titulo = TextView(this).apply {
+            text = "RotaBot\n\n1. Permita a sobreposição.\n2. Ative o serviço de acessibilidade.\n3. Autorize a captura da tela.\n4. Escolha os marcadores inicial e final (1 a 5) e toque em Iniciar.\n\nDurante a rota, use os controles flutuantes para pausar ou encerrar."
+            textSize = 16f
         }
-        val texto = TextView(this).apply {
-            text = "RotaBot\n\nPrimeiro (uma vez):\n1) Permitir sobreposição\n2) Ativar acessibilidade\n3) Permitir captura\n\nDepois, para cada hunt:\nescolha o ícone inicial e o final (1 a 20), depois toque em Iniciar.\nNo jogo, use o botão flutuante para ligar e desligar."
-            textSize = 15f
-        }
-        val campoInicio = EditText(this).apply {
-            hint = "Ícone inicial (1 a 20)"
+        val inicio = EditText(this).apply {
+            hint = "Marcador inicial (1 a 5)"
             setText("1")
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
         }
-        val campoFim = EditText(this).apply {
-            hint = "Ícone final (1 a 20)"
+        val fim = EditText(this).apply {
+            hint = "Marcador final (1 a 5)"
             setText("5")
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
         }
-        val btnSobreposicao = Button(this).apply {
+        val sobreposicao = Button(this).apply {
             text = "1) Permitir sobreposição"
             setOnClickListener {
-                startActivity(
-                    Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        Uri.parse("package:$packageName"))
-                )
+                if (Build.VERSION.SDK_INT >= 23) {
+                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+                }
             }
         }
-        val btnAcess = Button(this).apply {
+        val acessibilidade = Button(this).apply {
             text = "2) Abrir acessibilidade"
             setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
         }
-        val btnCaptura = Button(this).apply {
-            text = "3) Permitir captura"
+        val captura = Button(this).apply {
+            text = "3) Autorizar captura da tela"
             setOnClickListener {
-                val gerente = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-                startActivityForResult(gerente.createScreenCaptureIntent(), CODIGO_CAPTURA)
+                val manager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+                startActivityForResult(manager.createScreenCaptureIntent(), codigoCaptura)
             }
         }
-        val btnIniciar = Button(this).apply {
-            text = "Iniciar (com a hunt escolhida)"
-            setOnClickListener { iniciarBot(campoInicio, campoFim) }
-        }
-        val btnParar = Button(this).apply {
-            text = "Parar serviço"
+        val iniciar = Button(this).apply {
+            text = "Iniciar RotaBot"
             setOnClickListener {
-                startService(Intent(this@MainActivity, BotService::class.java)
-                    .setAction(BotService.ACAO_PARAR))
+                val a = inicio.text.toString().toIntOrNull()
+                val b = fim.text.toString().toIntOrNull()
+                if (a == null || b == null || a !in 1..5 || b !in 1..5 || a > b) {
+                    Toast.makeText(this@MainActivity, "Escolha marcadores entre 1 e 5. O inicial deve ser menor ou igual ao final.", Toast.LENGTH_LONG).show()
+                    return@setOnClickListener
+                }
+                if (!Settings.canDrawOverlays(this@MainActivity)) {
+                    Toast.makeText(this@MainActivity, "Ative a permissão de sobreposição.", Toast.LENGTH_LONG).show()
+                    return@setOnClickListener
+                }
+                if (ToqueService.instance == null) {
+                    Toast.makeText(this@MainActivity, "Ative o RotaBot em Acessibilidade e volte.", Toast.LENGTH_LONG).show()
+                    return@setOnClickListener
+                }
+                val dados = dadosCaptura
+                if (dados == null) {
+                    Toast.makeText(this@MainActivity, "Autorize a captura da tela primeiro.", Toast.LENGTH_LONG).show()
+                    return@setOnClickListener
+                }
+                val serviceIntent = Intent(this@MainActivity, BotService::class.java)
+                    .setAction(BotService.ACAO_INICIAR)
+                    .putExtra(BotService.EXTRA_INICIO, a)
+                    .putExtra(BotService.EXTRA_FIM, b)
+                    .putExtra(BotService.EXTRA_RESULTADO, resultadoCaptura)
+                    .putExtra(BotService.EXTRA_DADOS, dados)
+                if (Build.VERSION.SDK_INT >= 26) startForegroundService(serviceIntent) else startService(serviceIntent)
+                finish()
             }
         }
-
-        tela.addView(texto)
-        tela.addView(campoInicio)
-        tela.addView(campoFim)
-        tela.addView(btnSobreposicao)
-        tela.addView(btnAcess)
-        tela.addView(btnCaptura)
-        tela.addView(btnIniciar)
-        tela.addView(btnParar)
+        tela.addView(titulo)
+        tela.addView(inicio)
+        tela.addView(fim)
+        tela.addView(sobreposicao)
+        tela.addView(acessibilidade)
+        tela.addView(captura)
+        tela.addView(iniciar)
         setContentView(tela)
     }
 
+    @Deprecated("Deprecated in Android API")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == CODIGO_CAPTURA && resultCode == RESULT_OK && data != null) {
-            resultadoCaptura = resultCode
-            dadosCaptura = data
+        if (requestCode == codigoCaptura) {
+            if (resultCode == RESULT_OK && data != null) {
+                resultadoCaptura = resultCode
+                dadosCaptura = data
+                Toast.makeText(this, "Captura autorizada. Agora toque em Iniciar.", Toast.LENGTH_SHORT).show()
+            } else {
+                dadosCaptura = null
+                Toast.makeText(this, "A captura é necessária para usar a rota.", Toast.LENGTH_LONG).show()
+            }
         }
-    }
-
-    private fun iniciarBot(campoInicio: EditText, campoFim: EditText) {
-        val inicio = campoInicio.text.toString().toIntOrNull() ?: 1
-        val fim = campoFim.text.toString().toIntOrNull() ?: 5
-        val dados = dadosCaptura
-        if (dados == null) {
-            Toast.makeText(this, "Antes, toque em 3) Permitir captura e aceite.", Toast.LENGTH_LONG).show()
-            return
-        }
-        val intent = Intent(this, BotService::class.java)
-            .setAction(BotService.ACAO_INICIAR)
-            .putExtra("inicio", inicio)
-            .putExtra("fim", fim)
-            .putExtra("resultado", resultadoCaptura)
-            .putExtra("dados", dados)
-        if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent) else startService(intent)
-        finish()
     }
 }
