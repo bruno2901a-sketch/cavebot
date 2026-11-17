@@ -62,7 +62,7 @@ class BotService : Service() {
     @Volatile private var pausado = false
     @Volatile private var pausaManual = false
     @Volatile private var batalhaDetectada = false
-    private var processando = false
+    @Volatile private var processando = false
     private var indicePin = 0
     private var pinAcionado = false
     private var inicio = 1
@@ -280,36 +280,40 @@ class BotService : Service() {
     }
 
     private fun temCorForaDoAzulPadrao(bitmap: Bitmap): Boolean {
-        // Usa a cor que mais aparece na pequena faixa como referência do fundo.
-        // Assim não depende de um RGB chutado e tolera variação de captura/compressão.
-        if (bitmap.width < 3 || bitmap.height < 3) return false
-        val histograma = HashMap<Int, Int>()
-        for (y in 2 until bitmap.height - 2 step 2) {
-            for (x in 2 until bitmap.width - 2 step 2) {
-                val c = bitmap.getPixel(x, y)
-                val chave = ((Color.red(c) shr 3) shl 10) or
-                    ((Color.green(c) shr 3) shl 5) or (Color.blue(c) shr 3)
-                histograma[chave] = (histograma[chave] ?: 0) + 1
-            }
-        }
-        val fundo = histograma.maxByOrNull { it.value } ?: return false
-        val fr = ((fundo.key shr 10) and 31) * 8 + 4
-        val fg = ((fundo.key shr 5) and 31) * 8 + 4
-        val fb = (fundo.key and 31) * 8 + 4
-
-        // Se a cor dominante não for azul-escura, considera que há Pokémon.
-        val fundoAzulEscuro = fr <= 80 && fg <= 100 && fb in 35..160 &&
-            fb >= fr + 8 && fb >= fg - 12
-        if (!fundoAzulEscuro) return true
-
-        // Uma única pequena área colorida fora do azul de fundo já acusa presença.
-        // A tolerância de 24 níveis ignora ruído leve de compressão.
+        // A faixa é reduzida às margens internas para ignorar bordas do painel.
+        // Considera batalha quando existe uma pequena área colorida fora do azul,
+        // mas ignora pixels isolados de compressão e antialiasing.
+        if (bitmap.width < 5 || bitmap.height < 5) return false
+        var total = 0
+        var naoAzuis = 0
+        val largura = bitmap.width - 4
+        val altura = bitmap.height - 4
+        val mascara = BooleanArray(largura * altura)
         for (y in 2 until bitmap.height - 2) {
             for (x in 2 until bitmap.width - 2) {
                 val c = bitmap.getPixel(x, y)
-                if (abs(Color.red(c) - fr) > 24 ||
-                    abs(Color.green(c) - fg) > 24 ||
-                    abs(Color.blue(c) - fb) > 24) return true
+                val r = Color.red(c)
+                val g = Color.green(c)
+                val b = Color.blue(c)
+                val azulEscuro = r <= 78 && g <= 100 && b in 30..165 &&
+                    b >= r + 7 && b >= g - 15
+                val diferente = !azulEscuro
+                val i = (y - 2) * largura + (x - 2)
+                mascara[i] = diferente
+                total++
+                if (diferente) naoAzuis++
+            }
+        }
+        if (total == 0) return false
+
+        // Exige apenas 0,35% de pixels diferentes, com ao menos um pequeno
+        // agrupamento 2x2. Isso detecta o ícone pequeno sem disparar por 1 pixel.
+        if (naoAzuis < maxOf(4, total / 285)) return false
+        for (y in 0 until altura - 1) {
+            for (x in 0 until largura - 1) {
+                val i = y * largura + x
+                if (mascara[i] && mascara[i + 1] &&
+                    mascara[i + largura] && mascara[i + largura + 1]) return true
             }
         }
         return false
@@ -429,8 +433,10 @@ class BotService : Service() {
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = (largura - 250).coerceAtLeast(0)
-            y = 160
+            // O minimapa fica à direita. O painel do bot não pode cobri-lo,
+            // pois a captura usa exatamente a imagem dessa região.
+            x = ((largura - 250) / 2).coerceAtLeast(0)
+            y = 12
         }
         var toqueX = 0f
         var toqueY = 0f
