@@ -52,6 +52,8 @@ class BotService : Service() {
     private var overlay: LinearLayout? = null
     private var rodando = false
     private var pausado = false
+    private var pausaManual = false
+    private var batalhaDetectada = false
     private var processando = false
     private var indicePin = 0
     private var pinAcionado = false
@@ -72,7 +74,7 @@ class BotService : Service() {
     private val ciclo = object : Runnable {
         override fun run() {
             if (!rodando) return
-            if (!pausado) executarCiclo()
+            executarCiclo()
             handler.postDelayed(this, 450L)
         }
     }
@@ -86,11 +88,13 @@ class BotService : Service() {
         when (intent?.action) {
             ACAO_INICIAR -> iniciar(intent)
             ACAO_PAUSAR -> {
+                pausaManual = true
                 pausado = true
                 atualizarBotao()
             }
             ACAO_RETOMAR -> {
-                pausado = false
+                pausaManual = false
+                pausado = batalhaDetectada
                 atualizarBotao()
             }
             ACAO_PARAR -> pararTudo("RotaBot encerrado.")
@@ -149,6 +153,8 @@ class BotService : Service() {
             pinAcionado = false
             rodando = true
             pausado = false
+            pausaManual = false
+            batalhaDetectada = false
             criarOverlay()
             handler.post(ciclo)
         } catch (e: Exception) {
@@ -185,13 +191,10 @@ class BotService : Service() {
             (largura * 0.195f).toInt(), (altura * 0.65f).toInt()
         )
         val battle = frame.safeCrop(battleRect) ?: return
-        if (temIndicadorDeBatalha(battle)) {
-            pausado = true
-            atualizarBotao()
-            battle.recycle()
-            return
-        }
+        batalhaDetectada = temIndicadorDeBatalha(battle)
         battle.recycle()
+        pausado = pausaManual || batalhaDetectada
+        atualizarBotao()
         if (pausado) return
 
         val pins = Rota.obterPins()
@@ -321,8 +324,9 @@ class BotService : Service() {
         val toggle = Button(this).apply {
             text = "Pausar"
             setOnClickListener {
-                pausado = !pausado
-                text = if (pausado) "Retomar" else "Pausar"
+                pausaManual = !pausaManual
+                pausado = pausaManual || batalhaDetectada
+                text = if (pausaManual) "Retomar" else if (batalhaDetectada) "Em batalha" else "Pausar"
             }
         }
         val stop = Button(this).apply {
@@ -353,7 +357,7 @@ class BotService : Service() {
     private fun atualizarBotao() {
         val painel = overlay ?: return
         val button = painel.getChildAt(0) as? Button ?: return
-        button.text = if (pausado) "Retomar" else "Pausar"
+        button.text = if (pausaManual) "Retomar" else if (batalhaDetectada) "Em batalha" else "Pausar"
     }
 
     private fun iniciarNotificacao() {
@@ -378,6 +382,8 @@ class BotService : Service() {
     private fun pararTudo(mensagem: String) {
         rodando = false
         pausado = false
+        pausaManual = false
+        batalhaDetectada = false
         handler.removeCallbacks(ciclo)
         try {
             val wm = getSystemService(WINDOW_SERVICE) as WindowManager
