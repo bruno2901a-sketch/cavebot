@@ -5,35 +5,30 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.Log
 
-data class PinWaypoint(
-    val nome: String,
-    val bitmap: Bitmap
-)
+data class PinWaypoint(val nome: String, val bitmap: Bitmap)
 
 object Rota {
     private val listaPins = mutableListOf<PinWaypoint>()
 
-    fun carregarTodosOsPins(context: Context): List<PinWaypoint> {
+    fun carregarPins(context: Context, inicio: Int, fim: Int): List<PinWaypoint> {
         listaPins.clear()
-        val assetManager = context.assets
         try {
-            val arquivos = assetManager.list("pins")
-                ?.filter { it.endsWith(".png", ignoreCase = true) }
-                ?.sorted() ?: emptyList()
-
-            for (nomeArquivo in arquivos) {
-                assetManager.open("pins/$nomeArquivo").use { inputStream ->
-                    val bmp = BitmapFactory.decodeStream(inputStream)
-                    if (bmp != null) {
-                        listaPins.add(PinWaypoint(nomeArquivo, bmp))
-                    }
+            for (numero in inicio..fim) {
+                val nome = "p%02d.png".format(numero)
+                context.assets.open("pins/$nome").use { stream ->
+                    BitmapFactory.decodeStream(stream)?.let { listaPins.add(PinWaypoint(nome, it)) }
                 }
             }
         } catch (e: Exception) {
-            Log.e("RotaBot", "Erro ao carregar pins: ${e.message}")
+            Log.e("RotaBot", "Falha ao carregar marcadores", e)
         }
-        return listaPins
+        return listaPins.toList()
     }
 
-    fun obterPins(): List<PinWaypoint> = listaPins
+    fun obterPins(): List<PinWaypoint> = listaPins.toList()
+
+    fun limpar() {
+        listaPins.forEach { it.bitmap.recycle() }
+        listaPins.clear()
+    }
 }
