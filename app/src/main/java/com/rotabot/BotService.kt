@@ -200,12 +200,14 @@ class BotService : Service() {
 
         ultimoFrame?.recycle()
         ultimoFrame = frame
+        // Analisa somente a faixa superior do painel de batalha, onde aparece
+        // o primeiro indicador do Pokémon. O restante do painel é ignorado.
         val battleRect = Rect(
-            (largura * 0.045f).toInt(), (altura * 0.11f).toInt(),
-            (largura * 0.195f).toInt(), (altura * 0.65f).toInt()
+            (largura * 0.055f).toInt(), (altura * 0.115f).toInt(),
+            (largura * 0.185f).toInt(), (altura * 0.225f).toInt()
         )
         val battle = frame.safeCrop(battleRect) ?: return
-        batalhaDetectada = temIndicadorDeBatalha(battle)
+        batalhaDetectada = temCorForaDoAzulPadrao(battle)
         battle.recycle()
         pausado = pausaManual || batalhaDetectada
         atualizarBotao()
@@ -261,18 +263,18 @@ class BotService : Service() {
         handler.post { statusView?.text = mensagem }
     }
 
-    private fun temIndicadorDeBatalha(bitmap: Bitmap): Boolean {
-        var sinais = 0
-        for (y in 0 until bitmap.height step 3) {
-            for (x in 0 until bitmap.width step 3) {
+    private fun temCorForaDoAzulPadrao(bitmap: Bitmap): Boolean {
+        // Um pixel claramente diferente do fundo azul-escuro já indica Pokémon.
+        // A tolerância evita considerar pequenas variações de compressão como mudança.
+        for (y in 1 until bitmap.height - 1) {
+            for (x in 1 until bitmap.width - 1) {
                 val c = bitmap.getPixel(x, y)
-                val r = Color.red(c); val g = Color.green(c); val b = Color.blue(c)
-                val vermelho = r > 175 && g < 105 && b < 105
-                val verde = g > 170 && r < 105 && b < 120
-                if (vermelho || verde) {
-                    sinais++
-                    if (sinais >= 12) return true
-                }
+                val r = Color.red(c)
+                val g = Color.green(c)
+                val b = Color.blue(c)
+                val azulEscuro = r <= 75 && g <= 95 && b in 35..155 &&
+                    b >= r + 8 && b >= g - 12
+                if (!azulEscuro) return true
             }
         }
         return false
