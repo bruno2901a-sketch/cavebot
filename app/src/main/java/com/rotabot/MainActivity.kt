@@ -1,6 +1,9 @@
 package com.rotabot
 
 import android.app.Activity
+import android.app.AlertDialog
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
@@ -98,6 +101,36 @@ class MainActivity : Activity() {
         tela.addView(acessibilidade)
         tela.addView(captura)
         tela.addView(iniciar)
+        val relatorio = Button(this).apply {
+            text = "Ver relatório de erro"
+            setOnClickListener {
+                val texto = RelatorioErro.ler(this@MainActivity)
+                if (texto.isNullOrBlank()) {
+                    Toast.makeText(this@MainActivity, "Ainda não há erros registrados.", Toast.LENGTH_SHORT).show()
+                } else {
+                    val campo = EditText(this@MainActivity).apply {
+                        setText(texto)
+                        setTextIsSelectable(true)
+                        isSingleLine = false
+                        setHorizontallyScrolling(false)
+                        textSize = 12f
+                        setPadding(24, 16, 24, 16)
+                    }
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("Relatório — selecione e copie")
+                        .setView(campo)
+                        .setPositiveButton("Copiar tudo") { _, _ ->
+                            val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
+                            clipboard.setPrimaryClip(ClipData.newPlainText("Relatório RotaBot", campo.text.toString()))
+                            Toast.makeText(this@MainActivity, "Relatório copiado. Cole no chat.", Toast.LENGTH_LONG).show()
+                        }
+                        .setNeutralButton("Limpar relatório") { _, _ -> RelatorioErro.limpar(this@MainActivity) }
+                        .setNegativeButton("Fechar", null)
+                        .show()
+                }
+            }
+        }
+        tela.addView(relatorio)
         setContentView(tela)
     }
 
