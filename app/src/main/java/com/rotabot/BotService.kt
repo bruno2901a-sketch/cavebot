@@ -223,35 +223,51 @@ class BotService : Service() {
         val pin = pins.getOrNull(indicePin) ?: run { minimapa.recycle(); return }
         val pinPos = localizarTemplate(minimapa, pin.bitmap)
         val jogador = localizarCruzBranca(minimapa)
-        if (pinPos != null && jogador != null) {
-            val distancia = sqrt(
-                ((pinPos.first - jogador.first) * (pinPos.first - jogador.first) +
-                 (pinPos.second - jogador.second) * (pinPos.second - jogador.second)).toDouble()
-            )
-            if (distancia <= maxOf(18.0, pin.bitmap.width * 1.25)) {
+        if (pinPos == null) {
+            registrarStatus("Não encontrei o marcador ${indicePin + inicio} no minimapa. Confira a imagem do pin.")
+        } else {
+            val agora = System.currentTimeMillis()
+            val distancia = jogador?.let {
+                sqrt(
+                    ((pinPos.first - it.first) * (pinPos.first - it.first) +
+                     (pinPos.second - it.second) * (pinPos.second - it.second)).toDouble()
+                )
+            }
+            if (distancia != null && distancia <= maxOf(18.0, pin.bitmap.width * 1.25)) {
                 indicePin = if (indicePin >= pins.lastIndex) 0 else indicePin + 1
                 pinAcionado = false
-                ultimaAcao = System.currentTimeMillis()
-            } else if (!pinAcionado && System.currentTimeMillis() - ultimaAcao > 1300L) {
+                ultimaAcao = agora
+                registrarStatus("Cheguei ao marcador. Próximo: ${indicePin + inicio}.")
+            } else if (!pinAcionado || agora - ultimaAcao > 2800L) {
+                // Não bloqueia o toque caso a cruz branca não seja reconhecida.
+                // Reenvia após 2,8 s se o jogo não moveu o jogador até o destino.
                 processando = true
+                pinAcionado = false
                 val x = mapRect.left + pinPos.first
                 val y = mapRect.top + pinPos.second
-                registrarStatus("Enviando toque para marcador ${indicePin + inicio} em $x,$y...")
+                registrarStatus("Tentando tocar no marcador ${indicePin + inicio} em $x,$y. Jogador: ${if (jogador == null) "não localizado" else "localizado"}.")
                 val aceito = ToqueService.clicar(x.toFloat(), y.toFloat()) { sucesso, mensagem ->
                     processando = false
                     registrarStatus(mensagem)
                     if (sucesso) {
                         pinAcionado = true
                         ultimaAcao = System.currentTimeMillis()
+                    } else {
+                        pinAcionado = false
+                        ultimaAcao = System.currentTimeMillis()
                     }
                 }
                 if (!aceito) {
                     processando = false
-                    registrarStatus("Android não aceitou o comando. Verifique Acessibilidade.")
+                    pinAcionado = false
+                    ultimaAcao = agora
+                    registrarStatus("Android recusou o toque. Acessibilidade pode estar desconectada.")
                 }
+            } else if (jogador == null) {
+                registrarStatus("Marcador tocado; aguardando o movimento. Cruz branca não localizada.")
+            } else {
+                registrarStatus("Aguardando chegar ao marcador ${indicePin + inicio}.")
             }
-        } else {
-            registrarStatus(if (jogador == null && pinPos == null) "Não localizei jogador nem marcador no minimapa." else if (jogador == null) "Marcador localizado; não achei a cruz branca do jogador." else "Cruz branca localizada; não achei o marcador selecionado.")
         }
         minimapa.recycle()
     }
@@ -264,17 +280,36 @@ class BotService : Service() {
     }
 
     private fun temCorForaDoAzulPadrao(bitmap: Bitmap): Boolean {
-        // Um pixel claramente diferente do fundo azul-escuro já indica Pokémon.
-        // A tolerância evita considerar pequenas variações de compressão como mudança.
-        for (y in 1 until bitmap.height - 1) {
-            for (x in 1 until bitmap.width - 1) {
+        // Usa a cor que mais aparece na pequena faixa como referência do fundo.
+        // Assim não depende de um RGB chutado e tolera variação de captura/compressão.
+        if (bitmap.width < 3 || bitmap.height < 3) return false
+        val histograma = HashMap<Int, Int>()
+        for (y in 2 until bitmap.height - 2 step 2) {
+            for (x in 2 until bitmap.width - 2 step 2) {
                 val c = bitmap.getPixel(x, y)
-                val r = Color.red(c)
-                val g = Color.green(c)
-                val b = Color.blue(c)
-                val azulEscuro = r <= 75 && g <= 95 && b in 35..155 &&
-                    b >= r + 8 && b >= g - 12
-                if (!azulEscuro) return true
+                val chave = ((Color.red(c) shr 3) shl 10) or
+                    ((Color.green(c) shr 3) shl 5) or (Color.blue(c) shr 3)
+                histograma[chave] = (histograma[chave] ?: 0) + 1
+            }
+        }
+        val fundo = histograma.maxByOrNull { it.value } ?: return false
+        val fr = ((fundo.key shr 10) and 31) * 8 + 4
+        val fg = ((fundo.key shr 5) and 31) * 8 + 4
+        val fb = (fundo.key and 31) * 8 + 4
+
+        // Se a cor dominante não for azul-escura, considera que há Pokémon.
+        val fundoAzulEscuro = fr <= 80 && fg <= 100 && fb in 35..160 &&
+            fb >= fr + 8 && fb >= fg - 12
+        if (!fundoAzulEscuro) return true
+
+        // Uma única pequena área colorida fora do azul de fundo já acusa presença.
+        // A tolerância de 24 níveis ignora ruído leve de compressão.
+        for (y in 2 until bitmap.height - 2) {
+            for (x in 2 until bitmap.width - 2) {
+                val c = bitmap.getPixel(x, y)
+                if (abs(Color.red(c) - fr) > 24 ||
+                    abs(Color.green(c) - fg) > 24 ||
+                    abs(Color.blue(c) - fb) > 24) return true
             }
         }
         return false
