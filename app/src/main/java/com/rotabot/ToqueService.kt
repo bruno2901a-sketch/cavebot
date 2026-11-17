@@ -18,7 +18,7 @@ class ToqueService : AccessibilityService() {
             @Suppress("DEPRECATION")
             (service.getSystemService(WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealMetrics(metrics)
             if (x < 0f || y < 0f || x >= metrics.widthPixels || y >= metrics.heightPixels) {
-                callback?.invoke(false, "Coordenada fora da tela: \${x.toInt()},\${y.toInt()} / \${metrics.widthPixels}x\${metrics.heightPixels}")
+                callback?.invoke(false, "Coordenada fora da tela: ${x.toInt()},${y.toInt()} / ${metrics.widthPixels}x${metrics.heightPixels}")
                 return false
             }
             val path = Path().apply { moveTo(x, y) }
@@ -27,10 +27,10 @@ class ToqueService : AccessibilityService() {
                 .build()
             return service.dispatchGesture(gesture, object : GestureResultCallback() {
                 override fun onCompleted(gestureDescription: GestureDescription?) {
-                    callback?.invoke(true, "Toque concluído em \${x.toInt()},\${y.toInt()}")
+                    callback?.invoke(true, "Toque concluído em ${x.toInt()},${y.toInt()}")
                 }
                 override fun onCancelled(gestureDescription: GestureDescription?) {
-                    callback?.invoke(false, "Android cancelou o toque em \${x.toInt()},\${y.toInt()}")
+                    callback?.invoke(false, "Android cancelou o toque em ${x.toInt()},${y.toInt()}")
                 }
             }, null)
         }
