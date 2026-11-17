@@ -26,11 +26,9 @@ object Rota {
                     val bmp = BitmapFactory.decodeStream(inputStream)
                     if (bmp != null) {
                         listaPins.add(PinWaypoint(nomeArquivo, bmp))
-                        Log.d("RotaBot", "Pin carregado: $nomeArquivo")
                     }
                 }
             }
-            Log.i("RotaBot", "Total de pins carregados: ${listaPins.size}")
         } catch (e: Exception) {
             Log.e("RotaBot", "Erro ao carregar pins: ${e.message}")
         }

@@ -21,19 +21,16 @@ class BotService : Service() {
     private var rodando = false
     private var indicePinAtual = 0
 
-    // ================= COORDENADAS ESTRITAS (BASEADAS NA SUA PRINT) =================
-    // Batalha no canto SUPERIOR ESQUERDO
+    // Coordenadas estritas baseadas na sua print (Batalha à esquerda, Minimapa à direita)
     private val battleLeftPct = 0.02f
     private val battleTopPct = 0.05f
     private val battleRightPct = 0.25f
     private val battleBottomPct = 0.45f
 
-    // Minimapa no canto SUPERIOR DIREITO
     private val minimapLeftPct = 0.80f
     private val minimapTopPct = 0.05f
     private val minimapRightPct = 0.99f
     private val minimapBottomPct = 0.50f
-    // ============================================================================
 
     companion object {
         var ultimoFrameCapturado: Bitmap? = null
@@ -64,16 +61,11 @@ class BotService : Service() {
     }
 
     private fun executarCiclo() {
-        if (ToqueService.instance == null) {
-            Log.w("BotService", "Aguardando ativação do ToqueService...")
-            return
-        }
-
+        if (ToqueService.instance == null) return
         val telaAtual: Bitmap = ultimoFrameCapturado ?: return
         val largura = telaAtual.width
         val altura = telaAtual.height
 
-        // 1. Verifica APENAS o painel de Batalha (canto superior esquerdo)
         val rectBatalha = Rect(
             (largura * battleLeftPct).toInt(),
             (altura * battleTopPct).toInt(),
@@ -83,19 +75,13 @@ class BotService : Service() {
         val recorteBatalha = recortarSeguro(telaAtual, rectBatalha)
 
         if (recorteBatalha != null && temMonstroNaBatalha(recorteBatalha)) {
-            val alvoX = rectBatalha.centerX().toFloat()
-            val alvoY = (rectBatalha.top + 45).toFloat()
-            ToqueService.clicar(alvoX, alvoY)
+            ToqueService.clicar(rectBatalha.centerX().toFloat(), (rectBatalha.top + 45).toFloat())
             return
         }
 
-        // 2. Procura o pin atual na área isolada do Minimapa (canto superior direito)
         val pins = Rota.obterPins()
         if (pins.isEmpty()) return
-
-        if (indicePinAtual >= pins.size) {
-            indicePinAtual = 0
-        }
+        if (indicePinAtual >= pins.size) indicePinAtual = 0
 
         val pinAlvo = pins[indicePinAtual]
         val rectMinimapa = Rect(
@@ -111,8 +97,6 @@ class BotService : Service() {
             if (pontoEncontrado != null) {
                 val cliqueRealX = rectMinimapa.left + pontoEncontrado.first + (pinAlvo.bitmap.width / 2f)
                 val cliqueRealY = rectMinimapa.top + pontoEncontrado.second + (pinAlvo.bitmap.height / 2f)
-
-                Log.d("BotService", "Clicando em ${pinAlvo.nome} -> ($cliqueRealX, $cliqueRealY)")
                 ToqueService.clicar(cliqueRealX, cliqueRealY)
                 indicePinAtual = (indicePinAtual + 1) % pins.size
             } else {
@@ -137,11 +121,7 @@ class BotService : Service() {
                 val r = Color.red(pixel)
                 val g = Color.green(pixel)
                 val b = Color.blue(pixel)
-
-                val ehVerdeVida = (g > 180 && r < 80 && b < 80)
-                val ehVermelhoVida = (r > 180 && g < 70 && b < 70)
-
-                if (ehVerdeVida || ehVermelhoVida) {
+                if ((g > 180 && r < 80 && b < 80) || (r > 180 && g < 70 && b < 70)) {
                     pixelsBarraHp++
                     if (pixelsBarraHp >= 8) return true
                 }
@@ -154,18 +134,14 @@ class BotService : Service() {
         val maxX = areaBusca.width - template.width
         val maxY = areaBusca.height - template.height
         if (maxX <= 0 || maxY <= 0) return null
-
         val centroX = template.width / 2
         val centroY = template.height / 2
         val corAlvoCentro = template.getPixel(centroX, centroY)
 
         for (y in 0..maxY) {
             for (x in 0..maxX) {
-                val pixelAtual = areaBusca.getPixel(x + centroX, y + centroY)
-                if (coresProximas(pixelAtual, corAlvoCentro, 25)) {
-                    if (validarBlocoCompleto(areaBusca, template, x, y, 30)) {
-                        return Pair(x, y)
-                    }
+                if (coresProximas(areaBusca.getPixel(x + centroX, y + centroY), corAlvoCentro, 25)) {
+                    if (validarBlocoCompleto(areaBusca, template, x, y, 30)) return Pair(x, y)
                 }
             }
         }
@@ -179,12 +155,8 @@ class BotService : Service() {
             for (tx in 0 until template.width step 2) {
                 val pixelTemplate = template.getPixel(tx, ty)
                 if (Color.alpha(pixelTemplate) < 128) continue
-
                 totalAmostras++
-                val pixelArea = area.getPixel(startX + tx, startY + ty)
-                if (coresProximas(pixelArea, pixelTemplate, tolerancia)) {
-                    acertos++
-                }
+                if (coresProximas(area.getPixel(startX + tx, startY + ty), pixelTemplate, tolerancia)) acertos++
             }
         }
         return totalAmostras > 0 && (acertos.toFloat() / totalAmostras) >= 0.75f
