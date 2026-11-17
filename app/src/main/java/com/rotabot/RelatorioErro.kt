@@ -20,6 +20,18 @@ object RelatorioErro {
         }
     }
 
+    fun registrar(ctx: Context, titulo: String, erro: Throwable? = null) {
+        try {
+            val atual = ler(ctx).orEmpty()
+            val novo = buildString {
+                append(atual)
+                append("\n\n[").append(java.time.LocalDateTime.now()).append("] ").append(titulo)
+                erro?.let { append("\n").append(it.stackTraceToString()) }
+            }.takeLast(12000)
+            ctx.getSharedPreferences(ARQUIVO, Context.MODE_PRIVATE).edit().putString(CHAVE, novo).commit()
+        } catch (_: Exception) {}
+    }
+
     fun ler(ctx: Context): String? =
         ctx.getSharedPreferences(ARQUIVO, Context.MODE_PRIVATE).getString(CHAVE, null)
 
