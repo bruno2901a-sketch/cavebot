@@ -23,6 +23,7 @@ import android.os.Looper
 import android.provider.Settings
 import android.util.DisplayMetrics
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
@@ -50,10 +51,11 @@ class BotService : Service() {
     private var virtualDisplay: VirtualDisplay? = null
     private var imageReader: ImageReader? = null
     private var overlay: LinearLayout? = null
-    private var rodando = false
-    private var pausado = false
-    private var pausaManual = false
-    private var batalhaDetectada = false
+    @Volatile private var rodando = false
+    @Volatile private var rotaIniciada = false
+    @Volatile private var pausado = false
+    @Volatile private var pausaManual = false
+    @Volatile private var batalhaDetectada = false
     private var processando = false
     private var indicePin = 0
     private var pinAcionado = false
@@ -151,13 +153,14 @@ class BotService : Service() {
             Rota.carregarPins(this, inicio, fim)
             indicePin = 0
             pinAcionado = false
-            rodando = true
+            rodando = false
+            rotaIniciada = false
             pausado = false
             pausaManual = false
             batalhaDetectada = false
             criarOverlay()
-            handler.post(ciclo)
         } catch (e: Exception) {
+            RelatorioErro.registrar(this, "Falha ao iniciar captura", e)
             android.util.Log.e("RotaBot", "Falha ao iniciar captura", e)
             pararTudo("Falha ao iniciar: ${e.message ?: "erro desconhecido"}")
         }
@@ -178,6 +181,7 @@ class BotService : Service() {
             raw.recycle()
             cropped
         } catch (e: Exception) {
+            RelatorioErro.registrar(this, "Erro ao ler frame", e)
             android.util.Log.e("RotaBot", "Erro ao ler frame", e)
             null
         } finally {
@@ -321,8 +325,23 @@ class BotService : Service() {
             setPadding(8,8,8,8)
             setBackgroundColor(Color.argb(220, 25, 25, 25))
         }
+        val start = Button(this).apply {
+            text = "Iniciar rota"
+            setOnClickListener {
+                if (!rotaIniciada) {
+                    rotaIniciada = true
+                    rodando = true
+                    pausaManual = false
+                    pausado = false
+                    isEnabled = false
+                    handler.post(ciclo)
+                    atualizarBotao()
+                }
+            }
+        }
         val toggle = Button(this).apply {
             text = "Pausar"
+            isEnabled = false
             setOnClickListener {
                 pausaManual = !pausaManual
                 pausado = pausaManual || batalhaDetectada
@@ -333,6 +352,7 @@ class BotService : Service() {
             text = "Parar"
             setOnClickListener { pararTudo("RotaBot encerrado.") }
         }
+        painel.addView(start)
         painel.addView(toggle)
         painel.addView(stop)
         val params = WindowManager.LayoutParams(
@@ -342,22 +362,48 @@ class BotService : Service() {
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.END
-            x = 20
+            gravity = Gravity.TOP or Gravity.START
+            x = (largura - 250).coerceAtLeast(0)
             y = 160
+        }
+        var toqueX = 0f
+        var toqueY = 0f
+        var inicioX = 0
+        var inicioY = 0
+        painel.setOnTouchListener { _, event ->
+            when (event.action) {
+                MotionEvent.ACTION_DOWN -> {
+                    toqueX = event.rawX
+                    toqueY = event.rawY
+                    inicioX = params.x
+                    inicioY = params.y
+                    false
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    params.x = (inicioX + event.rawX - toqueX).toInt().coerceAtLeast(0)
+                    params.y = (inicioY + event.rawY - toqueY).toInt().coerceAtLeast(0)
+                    try { wm.updateViewLayout(painel, params) } catch (_: Exception) {}
+                    true
+                }
+                else -> false
+            }
         }
         try {
             wm.addView(painel, params)
             overlay = painel
         } catch (e: Exception) {
+            RelatorioErro.registrar(this, "Falha ao exibir controles flutuantes", e)
             android.util.Log.e("RotaBot", "Não foi possível exibir controles", e)
         }
     }
 
     private fun atualizarBotao() {
         val painel = overlay ?: return
-        val button = painel.getChildAt(0) as? Button ?: return
-        button.text = if (pausaManual) "Retomar" else if (batalhaDetectada) "Em batalha" else "Pausar"
+        val iniciar = painel.getChildAt(0) as? Button
+        val toggle = painel.getChildAt(1) as? Button
+        iniciar?.isEnabled = !rotaIniciada
+        toggle?.isEnabled = rotaIniciada
+        toggle?.text = if (pausaManual) "Retomar" else if (batalhaDetectada) "Em batalha" else "Pausar"
     }
 
     private fun iniciarNotificacao() {
@@ -381,6 +427,7 @@ class BotService : Service() {
 
     private fun pararTudo(mensagem: String) {
         rodando = false
+        rotaIniciada = false
         pausado = false
         pausaManual = false
         batalhaDetectada = false
