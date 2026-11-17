@@ -1,5 +1,6 @@
 package com.rotabot
 
+import android.app.Activity
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -112,7 +113,7 @@ class BotService : Service() {
             @Suppress("DEPRECATION")
             intent.getParcelableExtra(EXTRA_DADOS)
         }
-        if (resultCode != RESULT_OK || data == null) {
+        if (resultCode != Activity.RESULT_OK || data == null) {
             pararTudo("Autorização de captura ausente. Abra o RotaBot e autorize novamente.")
             return
         }
