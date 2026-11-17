@@ -15,6 +15,7 @@ import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.Build
 import android.os.Handler
+import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
 import android.util.DisplayMetrics
@@ -27,11 +28,14 @@ import android.widget.Button
 class BotService : Service() {
 
     private var projecao: MediaProjection? = null
-    private var leitor: ImageReader? = null
+    @Volatile private var leitor: ImageReader? = null
     private var virtual: VirtualDisplay? = null
     private val handler = Handler(Looper.getMainLooper())
-    private var rodando = false
-    private var estado = "parado"
+    // A leitura da tela é pesada: roda numa thread própria para não travar o app.
+    private val trabalho = HandlerThread("rotabot-ciclo").apply { start() }
+    private val bg = Handler(trabalho.looper)
+    @Volatile private var rodando = false
+    @Volatile private var estado = "parado"
 
     private var janela: WindowManager? = null
     private var botao: Button? = null
@@ -45,7 +49,7 @@ class BotService : Service() {
                 estado = "erro: ${e.javaClass.simpleName}"
             }
             atualizarNotificacao()
-            handler.postDelayed(this, INTERVALO_LEITURA_MS)
+            bg.postDelayed(this, INTERVALO_LEITURA_MS)
         }
     }
 
@@ -76,6 +80,14 @@ class BotService : Service() {
     private fun prepararCaptura(resultado: Int, dados: Intent) {
         val gerente = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         projecao = gerente.getMediaProjection(resultado, dados)
+        // Android 14+ exige registrar um callback antes de criar a captura.
+        projecao?.registerCallback(object : MediaProjection.Callback() {
+            override fun onStop() {
+                rodando = false
+                bg.removeCallbacks(ciclo)
+                estado = "captura encerrada"
+            }
+        }, handler)
 
         val metrics = DisplayMetrics()
         (getSystemService(Context.WINDOW_SERVICE) as WindowManager)
@@ -137,13 +149,13 @@ class BotService : Service() {
     private fun alternar() {
         if (rodando) {
             rodando = false
-            handler.removeCallbacks(ciclo)
+            bg.removeCallbacks(ciclo)
             estado = "pausado"
         } else {
             if (leitor == null) { estado = "sem permissão de captura"; return }
             Rota.resetar()
             rodando = true
-            handler.post(ciclo)
+            bg.post(ciclo)
         }
         botao?.text = if (rodando) "■ Parar" else "▶ RotaBot"
         atualizarNotificacao()
@@ -159,11 +171,13 @@ class BotService : Service() {
                 imagem.height, Bitmap.Config.ARGB_8888
             )
             bmp.copyPixelsFromBuffer(plano.buffer)
+            // tira a sobra de bytes no fim de cada linha, se houver
+            val tela = if (bmp.width != imagem.width) Bitmap.createBitmap(bmp, 0, 0, imagem.width, imagem.height) else bmp
             val toque = ToqueService.instancia
             estado = if (toque == null) {
                 "ative a acessibilidade do RotaBot"
             } else {
-                Rota.passo(bmp) { x, y -> toque.tocar(x, y) }
+                Rota.passo(tela) { x, y -> toque.tocar(x, y) }
             }
         } finally {
             imagem.close()
@@ -186,7 +200,7 @@ class BotService : Service() {
 
     private fun parar() {
         rodando = false
-        handler.removeCallbacks(ciclo)
+        bg.removeCallbacks(ciclo)
         botao?.let { janela?.removeView(it) }
         botao = null
         virtual?.release()
@@ -196,7 +210,7 @@ class BotService : Service() {
         estado = "parado"
     }
 
-    override fun onDestroy() { parar(); super.onDestroy() }
+    override fun onDestroy() { parar(); trabalho.quitSafely(); super.onDestroy() }
     override fun onBind(intent: Intent?): IBinder? = null
 
     private fun criarCanal() {
