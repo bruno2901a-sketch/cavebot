@@ -32,8 +32,6 @@ class BotService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private var rodando = false
     private var estado = "parado"
-    private val trabalho = java.util.concurrent.Executors.newSingleThreadExecutor()
-    @Volatile private var ocupado = false
 
     private var janela: WindowManager? = null
     private var botao: Button? = null
@@ -41,19 +39,12 @@ class BotService : Service() {
     private val ciclo = object : Runnable {
         override fun run() {
             if (!rodando) return
-            if (!ocupado) {
-                ocupado = true
-                trabalho.execute {
-                    try {
-                        lerTela()
-                    } catch (e: Exception) {
-                        estado = "erro: ${e.javaClass.simpleName}"
-                    } finally {
-                        ocupado = false
-                    }
-                    handler.post { atualizarNotificacao() }
-                }
+            try {
+                lerTela()
+            } catch (e: Exception) {
+                estado = "erro: ${e.javaClass.simpleName}"
             }
+            atualizarNotificacao()
             handler.postDelayed(this, INTERVALO_LEITURA_MS)
         }
     }
@@ -85,9 +76,6 @@ class BotService : Service() {
     private fun prepararCaptura(resultado: Int, dados: Intent) {
         val gerente = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         projecao = gerente.getMediaProjection(resultado, dados)
-        projecao?.registerCallback(object : MediaProjection.Callback() {
-            override fun onStop() { estado = "captura encerrada" }
-        }, handler)
 
         val metrics = DisplayMetrics()
         (getSystemService(Context.WINDOW_SERVICE) as WindowManager)
@@ -161,24 +149,8 @@ class BotService : Service() {
         atualizarNotificacao()
     }
 
-    /** Se o celular girou (retrato <-> paisagem), refaz a captura com o tamanho atual da tela. */
-    private fun garantirTamanho() {
-        val metrics = DisplayMetrics()
-        (getSystemService(Context.WINDOW_SERVICE) as WindowManager)
-            .defaultDisplay.getRealMetrics(metrics)
-        val w = metrics.widthPixels
-        val h = metrics.heightPixels
-        val atual = leitor ?: return
-        if (atual.width == w && atual.height == h) return
-        leitor = ImageReader.newInstance(w, h, PixelFormat.RGBA_8888, 2)
-        virtual?.setSurface(leitor?.surface)
-        virtual?.resize(w, h, metrics.densityDpi)
-        atual.close()
-        Rota.carregar(this, w)
-    }
-
     private fun lerTela() {
-        garantirTamanho()
+        ajustarRotacao()
         val imagem = leitor?.acquireLatestImage() ?: return
         try {
             val plano = imagem.planes[0]
@@ -191,11 +163,25 @@ class BotService : Service() {
             estado = if (toque == null) {
                 "ative a acessibilidade do RotaBot"
             } else {
-                Rota.passo(bmp) { x, y -> toque.tocar(x, y) } + " | " + ToqueService.resultado + " | tela ${bmp.width}x${bmp.height}"
+                Rota.passo(bmp) { x, y -> toque.tocar(x, y) }
             }
         } finally {
             imagem.close()
         }
+    }
+
+    /** Se o celular girou, recria o leitor com o tamanho novo da tela. */
+    private fun ajustarRotacao() {
+        val atual = leitor ?: return
+        val m = DisplayMetrics()
+        (getSystemService(Context.WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealMetrics(m)
+        if (m.widthPixels == atual.width && m.heightPixels == atual.height) return
+        val novo = ImageReader.newInstance(m.widthPixels, m.heightPixels, PixelFormat.RGBA_8888, 2)
+        virtual?.resize(m.widthPixels, m.heightPixels, m.densityDpi)
+        virtual?.surface = novo.surface
+        leitor = novo
+        atual.close()
+        Rota.carregar(this, m.widthPixels)
     }
 
     private fun parar() {
@@ -231,7 +217,7 @@ class BotService : Service() {
     }
 
     private fun atualizarNotificacao() {
-        getSystemService(NotificationManager::class.java).notify(1, notificacao(estado))
+        getSystemService(NotificationManager::class.java).notify(1, notificacao(estado + " | " + ToqueService.resultado + " | tela " + (leitor?.width ?: 0) + "x" + (leitor?.height ?: 0)))
     }
 
     companion object {
