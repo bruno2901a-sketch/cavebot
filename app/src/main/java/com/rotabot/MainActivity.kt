@@ -1,10 +1,8 @@
 package com.rotabot
 
 import android.app.Activity
-import android.app.AlertDialog
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Intent
+import android.media.RingtoneManager
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
@@ -14,6 +12,7 @@ import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 
@@ -21,13 +20,15 @@ class MainActivity : Activity() {
     private val codigoCaptura = 42
     private var dadosCaptura: Intent? = null
     private var resultadoCaptura = 0
+    private var uriSomSelecionado: String = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)?.toString() ?: ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         RelatorioErro.instalar(this)
         if (savedInstanceState != null) {
             resultadoCaptura = savedInstanceState.getInt("resultado", 0)
-            dadosCaptura = savedInstanceState.getParcelable<Intent>("dados")
+            dadosCaptura = savedInstanceState.getParcelable("dados")
+            uriSomSelecionado = savedInstanceState.getString("uriSom", uriSomSelecionado)
         }
 
         val tela = LinearLayout(this).apply {
@@ -35,8 +36,8 @@ class MainActivity : Activity() {
             setPadding(36, 36, 36, 36)
         }
         val titulo = TextView(this).apply {
-            text = "RotaBot\n\n1. Permita a sobreposição.\n2. Ative o serviço de acessibilidade.\n3. Autorize a captura da tela.\n4. Escolha os marcadores e opções abaixo."
-            textSize = 15f
+            text = "RotaBot\n\n1. Permita a sobreposição.\n2. Ative a acessibilidade.\n3. Autorize a captura da tela.\n4. Ajuste as opções e inicie."
+            textSize = 14f
         }
         val inicio = EditText(this).apply {
             hint = "Marcador inicial (1 a 20)"
@@ -57,6 +58,24 @@ class MainActivity : Activity() {
         val checkAlerta = CheckBox(this).apply {
             text = "Ativar Alerta Sonoro (Batalha > 15s / Player)"
             isChecked = true
+        }
+
+        val labelVolume = TextView(this).apply { text = "Volume do Alerta:" }
+        val seekVolume = SeekBar(this).apply {
+            max = 100
+            progress = 80
+        }
+
+        val btnEscolherSom = Button(this).apply {
+            text = "Escolher Toque do Alarme"
+            setOnClickListener {
+                val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
+                    putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALL)
+                    putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "Selecione o som do alerta")
+                    putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, Uri.parse(uriSomSelecionado))
+                }
+                startActivityForResult(intent, 99)
+            }
         }
 
         val sobreposicao = Button(this).apply {
@@ -84,7 +103,7 @@ class MainActivity : Activity() {
                 val a = inicio.text.toString().toIntOrNull()
                 val b = fim.text.toString().toIntOrNull()
                 if (a == null || b == null || a !in 1..20 || b !in 1..20 || a > b) {
-                    Toast.makeText(this@MainActivity, "Escolha marcadores entre 1 e 20 válidos.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@MainActivity, "Escolha marcadores válidos (1 a 20).", Toast.LENGTH_LONG).show()
                     return@setOnClickListener
                 }
                 if (!Settings.canDrawOverlays(this@MainActivity)) {
@@ -108,6 +127,8 @@ class MainActivity : Activity() {
                     .putExtra(BotService.EXTRA_DADOS, dados)
                     .putExtra(BotService.EXTRA_USA_LOOT, checkLoot.isChecked)
                     .putExtra(BotService.EXTRA_USA_ALERTA, checkAlerta.isChecked)
+                    .putExtra(BotService.EXTRA_VOLUME, seekVolume.progress)
+                    .putExtra(BotService.EXTRA_URI_SOM, uriSomSelecionado)
 
                 if (Build.VERSION.SDK_INT >= 26) startForegroundService(serviceIntent) else startService(serviceIntent)
                 finish()
@@ -119,6 +140,9 @@ class MainActivity : Activity() {
         tela.addView(fim)
         tela.addView(checkLoot)
         tela.addView(checkAlerta)
+        tela.addView(labelVolume)
+        tela.addView(seekVolume)
+        tela.addView(btnEscolherSom)
         tela.addView(sobreposicao)
         tela.addView(acessibilidade)
         tela.addView(captura)
@@ -130,6 +154,7 @@ class MainActivity : Activity() {
         super.onSaveInstanceState(outState)
         outState.putInt("resultado", resultadoCaptura)
         outState.putParcelable("dados", dadosCaptura)
+        outState.putString("uriSom", uriSomSelecionado)
     }
 
     @Deprecated("Deprecated in Android API")
@@ -143,6 +168,12 @@ class MainActivity : Activity() {
             } else {
                 dadosCaptura = null
                 Toast.makeText(this, "A captura é necessária.", Toast.LENGTH_LONG).show()
+            }
+        } else if (requestCode == 99 && resultCode == RESULT_OK && data != null) {
+            val uri = data.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
+            if (uri != null) {
+                uriSomSelecionado = uri.toString()
+                Toast.makeText(this, "Som do alarme alterado!", Toast.LENGTH_SHORT).show()
             }
         }
     }
