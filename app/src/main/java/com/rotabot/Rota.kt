@@ -5,52 +5,40 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.SystemClock
 
-// Posições são frações da tela (referência: 2460 x 1080, celular deitado).
 object Cal {
-    // Conteúdo do minimapa (sem o título e sem o jogo ao redor)
     const val MINIMAPA_X0 = 0.848f
     const val MINIMAPA_Y0 = 0.135f
     const val MINIMAPA_X1 = 0.996f
     const val MINIMAPA_Y1 = 0.615f
 
-    // Lista de batalha (só a lista, abaixo da fileira de ícones do painel)
     const val BATALHA_X0 = 0.045f
     const val BATALHA_Y0 = 0.215f
     const val BATALHA_X1 = 0.195f
     const val BATALHA_Y1 = 0.650f
-    const val BARRA_MIN = 20          // largura mínima (px) de uma barra de vida verde
+    const val BARRA_MIN = 20
 
-    const val CHEGOU_FRAC = 0.015f    // distância (fração da largura) até a cruz = chegou
-    const val LIMIAR = 0.90f          // semelhança mínima (0 a 1) para aceitar um pino
+    const val CHEGOU_FRAC = 0.015f
+    const val LIMIAR = 0.90f
     const val INTERVALO_CLIQUE = 1500L
     const val TOTAL_ICONES = 20
-    const val LADO_ICONE = 26         // tamanho real dos ícones numa tela de 2460 px
+    const val LADO_ICONE = 26
 
-    // Coordenadas em fração da tela dos pontos 1 a 8 ao redor do personagem
     val PONTOS_CORPO = listOf(
-        Pair(0.4890f, 0.5011f), // 1
-        Pair(0.4880f, 0.6082f), // 2
-        Pair(0.5270f, 0.6082f), // 3
-        Pair(0.5660f, 0.5968f), // 4
-        Pair(0.5650f, 0.4989f), // 5
-        Pair(0.4890f, 0.4077f), // 6
-        Pair(0.5260f, 0.3964f), // 7
-        Pair(0.5680f, 0.3986f)  // 8
+        Pair(0.4890f, 0.5011f), Pair(0.4880f, 0.6082f),
+        Pair(0.5270f, 0.6082f), Pair(0.5660f, 0.5968f),
+        Pair(0.5650f, 0.4989f), Pair(0.4890f, 0.4077f),
+        Pair(0.5260f, 0.3964f), Pair(0.5680f, 0.3986f)
     )
 
-    // Coordenadas em fração da tela das novas janelas de loot na sequência exata: 1, 2, 3, 4
     val PONTOS_LOOT = listOf(
-        Pair(0.5403f, 0.3351f), // 1
-        Pair(0.7027f, 0.1635f), // 2
-        Pair(0.6994f, 0.3454f), // 3
-        Pair(0.5357f, 0.1677f)  // 4
+        Pair(0.5403f, 0.3351f), Pair(0.7027f, 0.1635f),
+        Pair(0.6994f, 0.3454f), Pair(0.5357f, 0.1677f)
     )
 }
 
 private fun cinza(p: Int): Double =
     ((p shr 16) and 0xFF) * 0.299 + ((p shr 8) and 0xFF) * 0.587 + (p and 0xFF) * 0.114
 
-/** Ícone do pino em tons de cinza, sem a média, pronto para comparar por correlação. */
 class Modelo(val indice: Int, bmp: Bitmap) {
     val w = bmp.width
     val h = bmp.height
@@ -78,25 +66,24 @@ class Modelo(val indice: Int, bmp: Bitmap) {
 object Rota {
     private var modelos: List<Modelo> = emptyList()
 
-    private var alvo = 0                  // índice atual na lista de pinos
-    private var direcaoIda = true         // true = indo do primeiro ao último; false = voltando do último ao primeiro
+    private var alvo = 0
+    private var direcaoIda = true
     private var ultimoClique = 0L
-    private var confirmacoes = 0          // leituras seguidas perto do pino
-    private var ultimaDist = -1f          // distância no último toque
-    private var semProgresso = 0          // toques seguidos sem chegar mais perto
-    private var naoVisto = 0              // leituras seguidas sem achar o pino
-    private var ultimaDistVista = -1f     // distância da última vez que o pino foi visto
-    private var estavaEmLuta = false      // controla se havia monstro na leitura anterior
-    private var tentativaDesvio = 0       // contador para micro-desvios sutis ao redor do ícone
+    private var confirmacoes = 0
+    private var ultimaDist = -1f
+    private var semProgresso = 0
+    private var naoVisto = 0
+    private var ultimaDistVista = -1f
+    private var estavaEmLuta = false
+    private var tentativaDesvio = 0
+    private var tempoInicioLuta = 0L // Cronômetro para o alerta de 15 segundos
     @Volatile private var melhorScore = 0.0
 
-    /** Carrega os ícones de [inicio] a [fim] já no tamanho certo para a largura da tela. */
     fun carregar(ctx: Context, inicio: Int, fim: Int, larguraTela: Int) {
         val lado = (Cal.LADO_ICONE * larguraTela / 2460f).toInt().coerceAtLeast(8)
         val lista = ArrayList<Modelo>()
         for (n in inicio..fim) {
-            val raw = ctx.assets.open("pins/p%02d.png".format(n)).use { BitmapFactory.decodeStream(it) }
-                ?: continue
+            val raw = ctx.assets.open("pins/p%02d.png".format(n)).use { BitmapFactory.decodeStream(it) } ?: continue
             val bmp = if (raw.width == lado && raw.height == lado) raw
             else Bitmap.createScaledBitmap(raw, lado, lado, true)
             lista.add(Modelo(n, bmp))
@@ -123,6 +110,8 @@ object Rota {
         ultimaDistVista = -1f
         estavaEmLuta = false
         tentativaDesvio = 0
+        tempoInicioLuta = 0L
+        BotService.pararAlarme()
     }
 
     private fun proximoPino() {
@@ -130,18 +119,14 @@ object Rota {
         if (tamanho <= 0) return
 
         if (direcaoIda) {
-            if (alvo < tamanho - 1) {
-                alvo++
-            } else {
-                // Chegou no último pino da ida: inverte a direção para voltar de trás para frente
+            if (alvo < tamanho - 1) alvo++
+            else {
                 direcaoIda = false
                 alvo = tamanho - 2.coerceAtLeast(0)
             }
         } else {
-            if (alvo > 0) {
-                alvo--
-            } else {
-                // Chegou de volta no primeiro pino: inverte a direção para ir novamente para frente
+            if (alvo > 0) alvo--
+            else {
                 direcaoIda = true
                 alvo = 1.coerceAtMost(tamanho - 1)
             }
@@ -156,10 +141,8 @@ object Rota {
         tentativaDesvio = 0
     }
 
-    /** Executa a rotina completa de autoloot após o monstro morrer. */
     private fun executarAutoloot(larguraTela: Int, alturaTela: Int) {
         SystemClock.sleep(1000L)
-
         for (ponto in Cal.PONTOS_CORPO) {
             val px = ponto.first * larguraTela
             val py = ponto.second * alturaTela
@@ -168,9 +151,7 @@ object Rota {
             ToqueService.clicar(px, py, 30L)
             SystemClock.sleep(100L)
         }
-
         SystemClock.sleep(250L)
-
         for (ponto in Cal.PONTOS_LOOT) {
             val lx = ponto.first * larguraTela
             val ly = ponto.second * alturaTela
@@ -182,8 +163,7 @@ object Rota {
         }
     }
 
-    /** Uma leitura da tela. Retorna o estado para mostrar no painel. */
-    fun passo(tela: Bitmap, tocar: (Float, Float) -> Unit): String {
+    fun passo(tela: Bitmap, context: Context, usaLoot: Boolean, usaAlerta: Boolean, tocar: (Float, Float) -> Unit): String {
         if (tela.height > tela.width) return "CELULAR EM RETRATO (pausado)"
         if (modelos.isEmpty()) return "SEM ÍCONES CARREGADOS"
 
@@ -195,15 +175,29 @@ object Rota {
         val cruz = acharCruz(tela, x0, y0, x1, y1) ?: return "SEM CRUZ NO MINIMAPA (pausado)"
 
         if (temMonstro(tela)) {
-            estavaEmLuta = true
+            val agora = SystemClock.uptimeMillis()
+            if (!estavaEmLuta) {
+                estavaEmLuta = true
+                tempoInicioLuta = agora
+            } else if (usaAlerta && (agora - tempoInicioLuta >= 15000L)) {
+                // Passou de 15 segundos em luta contínua (provável player preso na batalha)
+                BotService.tocarAlarme(context)
+                return "ALERTA: Batalha > 15s (Player?)"
+            }
             return "LUTA (pausado)"
         }
 
+        // Se saiu da luta, para o alarme imediatamente
+        BotService.pararAlarme()
+
         if (estavaEmLuta) {
             estavaEmLuta = false
-            executarAutoloot(tela.width, tela.height)
+            tempoInicioLuta = 0L
+            if (usaLoot) {
+                executarAutoloot(tela.width, tela.height)
+            }
             ultimoClique = SystemClock.uptimeMillis()
-            return "AUTOLOOT concluído"
+            return if (usaLoot) "AUTOLOOT concluído" else "MONSTRO MORREU (Retornando)"
         }
 
         val tamanho = modelos.size
@@ -221,7 +215,7 @@ object Rota {
             naoVisto++
             if (ultimaDistVista >= 0f && ultimaDistVista <= tela.width * Cal.CHEGOU_FRAC * 1.5f && naoVisto >= 3) {
                 proximoPino()
-                return "CHEGOU no pino $indice (pino sumiu do mapa)"
+                return "CHEGOU no pino $indice (pino sumiu)"
             }
             if (naoVisto >= 30) return "PINO $indice FORA DO MINIMAPA? $acerto"
             return "PROCURANDO pino $indice (${alvo + 1}/$tamanho) $acerto"
@@ -251,17 +245,17 @@ object Rota {
             }
             ultimaDist = dist
 
-            // Micro-desvio extremamente sutil de apenas 2 pixels ao redor do ícone (anti-stuck de autoclick)
+            // Micro-desvio de 6 pixels nas 4 direções (Leste, Norte, Oeste, Sul)
             var alvoX = achado.first.toFloat()
             var alvoY = achado.second.toFloat()
 
             if (semProgresso >= 4) {
-                val desvioSutil = 2f // desvio de apenas 2 pixels para não sair de cima do ícone
+                val desvioAjustado = 6f
                 when (tentativaDesvio % 4) {
-                    0 -> alvoX += desvioSutil // Leste
-                    1 -> alvoY -= desvioSutil // Norte
-                    2 -> alvoX -= desvioSutil // Oeste
-                    3 -> alvoY += desvioSutil // Sul
+                    0 -> alvoX += desvioAjustado
+                    1 -> alvoY -= desvioAjustado
+                    2 -> alvoX -= desvioAjustado
+                    3 -> alvoY += desvioAjustado
                 }
                 tentativaDesvio++
                 semProgresso = 2
@@ -281,7 +275,6 @@ object Rota {
                else "INDO ao pino $indice (${alvo + 1}/$tamanho) [$sentidoStr] $acerto"
     }
 
-    /** Monstro na lista de batalha = barra de vida verde (faixa horizontal larga) dentro da lista. */
     fun temMonstro(tela: Bitmap): Boolean {
         val x0 = (tela.width * Cal.BATALHA_X0).toInt()
         val y0 = (tela.height * Cal.BATALHA_Y0).toInt()
@@ -312,11 +305,6 @@ object Rota {
         return false
     }
 
-    /**
-     * Procura a cruz branca do personagem no minimapa (2 px de espessura, uns 18 px de
-     * comprimento) e retorna o centro dela. Perto da borda do mapa ela sai do meio do
-     * minimapa, por isso é procurada em toda a área. Retorna null se não achar.
-     */
     fun acharCruz(tela: Bitmap, x0: Int, y0: Int, x1: Int, y1: Int): Pair<Int, Int>? {
         val rw = x1 - x0
         val rh = y1 - y0
@@ -333,7 +321,6 @@ object Rota {
         var by = -1
         for (y in 8 until rh - 10) {
             for (x in 8 until rw - 10) {
-                // canto do cruzamento: bloco 2x2 branco
                 if (!branco[y * rw + x] || !branco[y * rw + x + 1] ||
                     !branco[(y + 1) * rw + x] || !branco[(y + 1) * rw + x + 1]) continue
                 var s = 0
@@ -350,14 +337,9 @@ object Rota {
                 }
             }
         }
-        return if (melhor >= 62) Pair(x0 + bx + 1, y0 + by + 1) else null   // 62 de 72 pontos
+        return if (melhor >= 62) Pair(x0 + bx + 1, y0 + by + 1) else null
     }
 
-    /**
-     * Procura o ícone na região do minimapa por correlação normalizada
-     * (1,0 = igual; perto de 0 = sem relação). Guarda o melhor valor em melhorScore.
-     * Retorna o centro do melhor encaixe, ou null se ficou abaixo do limiar.
-     */
     private fun achar(tela: Bitmap, x0: Int, y0: Int, x1: Int, y1: Int, m: Modelo): Pair<Int, Int>? {
         val rw = x1 - x0
         val rh = y1 - y0
@@ -366,7 +348,6 @@ object Rota {
             return null
         }
 
-        // lê a região uma vez só (getPixel pixel a pixel é lento demais)
         val px = IntArray(rw * rh)
         tela.getPixels(px, 0, rw, x0, y0, rw, rh)
         val g = DoubleArray(rw * rh)
@@ -389,7 +370,6 @@ object Rota {
             }
             y += 2
         }
-        // refina em volta do melhor ponto (a busca andou de 2 em 2 pixels)
         val cx = bx
         val cy = by
         for (dy in -1..1) {
@@ -427,7 +407,7 @@ object Rota {
         }
         val n = (m.w * m.h).toDouble()
         val variancia = sq - sp * sp / n
-        if (variancia < 50.0) return -1.0     // trecho liso: sem como comparar
+        if (variancia < 50.0) return -1.0
         return sc / (Math.sqrt(variancia) * m.norma)
     }
 }
