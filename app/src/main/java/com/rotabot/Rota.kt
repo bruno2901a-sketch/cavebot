@@ -38,11 +38,12 @@ object Cal {
         Pair(0.5680f, 0.3986f)  // 8
     )
 
-    // Coordenadas em fração da tela das janelas de loot na sequência exata: 2, 3, 4
+    // Coordenadas em fração da tela das novas janelas de loot na sequência exata: 1, 2, 3, 4
     val PONTOS_LOOT = listOf(
-        Pair(0.8630f, 0.1731f), // 2
-        Pair(0.6960f, 0.1663f), // 3
-        Pair(0.5470f, 0.1754f)  // 4
+        Pair(0.5403f, 0.3351f), // 1
+        Pair(0.7027f, 0.1635f), // 2
+        Pair(0.6994f, 0.3454f), // 3
+        Pair(0.5357f, 0.1677f)  // 4
     )
 }
 
@@ -148,13 +149,13 @@ object Rota {
         // Pequena pausa para as janelas de loot abrirem
         SystemClock.sleep(250L)
 
-        // 3. Clica 4 vezes em cada janela de loot na ordem exata: 2, depois 3, depois 4
+        // 3. Clica 4 vezes em cada janela de loot na ordem exata: 1, 2, 3, 4 (com intervalo de 100 ms entre os cliques)
         for (ponto in Cal.PONTOS_LOOT) {
             val lx = ponto.first * larguraTela
             val ly = ponto.second * alturaTela
             repeat(4) {
                 ToqueService.clicar(lx, ly, 30L)
-                SystemClock.sleep(60L)
+                SystemClock.sleep(100L)
             }
             SystemClock.sleep(100L)
         }
