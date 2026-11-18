@@ -15,7 +15,6 @@ object Cal {
     const val BATALHA_Y0 = 0.215f
     const val BATALHA_X1 = 0.195f
     const val BATALHA_Y1 = 0.650f
-    const val BARRA_MIN = 20
 
     const val CHEGOU_FRAC = 0.015f
     const val LIMIAR = 0.90f
@@ -65,7 +64,6 @@ class Modelo(val indice: Int, bmp: Bitmap) {
 
 object Rota {
     private var modelos: List<Modelo> = emptyList()
-
     private var alvo = 0
     private var direcaoIda = true
     private var ultimoClique = 0L
@@ -76,7 +74,7 @@ object Rota {
     private var ultimaDistVista = -1f
     private var estavaEmLuta = false
     private var tentativaDesvio = 0
-    private var tempoInicioLuta = 0L // Cronômetro para o alerta de 15 segundos
+    private var tempoInicioLuta = 0L
     @Volatile private var melhorScore = 0.0
 
     fun carregar(ctx: Context, inicio: Int, fim: Int, larguraTela: Int) {
@@ -180,14 +178,12 @@ object Rota {
                 estavaEmLuta = true
                 tempoInicioLuta = agora
             } else if (usaAlerta && (agora - tempoInicioLuta >= 15000L)) {
-                // Passou de 15 segundos em luta contínua (provável player preso na batalha)
                 BotService.tocarAlarme(context)
                 return "ALERTA: Batalha > 15s (Player?)"
             }
             return "LUTA (pausado)"
         }
 
-        // Se saiu da luta, para o alarme imediatamente
         BotService.pararAlarme()
 
         if (estavaEmLuta) {
@@ -245,7 +241,6 @@ object Rota {
             }
             ultimaDist = dist
 
-            // Micro-desvio de 6 pixels nas 4 direções (Leste, Norte, Oeste, Sul)
             var alvoX = achado.first.toFloat()
             var alvoY = achado.second.toFloat()
 
@@ -275,6 +270,11 @@ object Rota {
                else "INDO ao pino $indice (${alvo + 1}/$tamanho) [$sentidoStr] $acerto"
     }
 
+    /**
+     * Identifica presença de alvo na lista de batalha analisando alteração 
+     * em relação ao fundo padrão azul-escuro/vazio do painel.
+     * Funciona independentemente da cor da vida (verde, amarela, vermelha ou preta).
+     */
     fun temMonstro(tela: Bitmap): Boolean {
         val x0 = (tela.width * Cal.BATALHA_X0).toInt()
         val y0 = (tela.height * Cal.BATALHA_Y0).toInt()
@@ -285,22 +285,17 @@ object Rota {
         if (rw <= 0 || rh <= 0) return false
         val px = IntArray(rw * rh)
         tela.getPixels(px, 0, rw, x0, y0, rw, rh)
-        var y = 0
-        while (y < rh) {
-            var corrida = 0
-            for (x in 0 until rw) {
-                val p = px[y * rw + x]
-                val r = (p shr 16) and 0xFF
-                val g = (p shr 8) and 0xFF
-                val b = p and 0xFF
-                if (g > 140 && r < 110 && b < 110 && g - r > 50) {
-                    corrida++
-                    if (corrida >= Cal.BARRA_MIN) return true
-                } else {
-                    corrida = 0
-                }
+        
+        var pixelsDiferentes = 0
+        for (p in px) {
+            val r = (p shr 16) and 0xFF
+            val g = (p shr 8) and 0xFF
+            val b = p and 0xFF
+            // Se o pixel fugir do padrão de fundo azul-escuro vazio (ex: ícone, criatura, barras de HP)
+            if (!(r < 30 && g < 30 && b > 40 && b < 100)) {
+                pixelsDiferentes++
+                if (pixelsDiferentes >= 35) return true // Alvo detectado na lista de batalha
             }
-            y += 2
         }
         return false
     }
