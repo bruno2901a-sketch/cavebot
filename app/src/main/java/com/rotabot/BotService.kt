@@ -10,7 +10,6 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.PixelFormat
-import android.graphics.Rect
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.ImageReader
@@ -21,6 +20,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.util.DisplayMetrics
 import android.view.Gravity
@@ -28,11 +28,9 @@ import android.view.MotionEvent
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
-import android.widget.Toast
 import android.widget.TextView
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
-import kotlin.math.abs
-import kotlin.math.sqrt
 
 class BotService : Service() {
     companion object {
@@ -46,6 +44,7 @@ class BotService : Service() {
         const val EXTRA_DADOS = "dados"
         private const val CANAL = "rotabot_rota"
         private const val NOTIFICACAO_ID = 71
+        private const val INTERVALO_CICLO_MS = 450L
     }
 
     private val handler = Handler(Looper.getMainLooper())
@@ -53,25 +52,22 @@ class BotService : Service() {
     private lateinit var workerHandler: Handler
     private var projection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
-    private var imageReader: ImageReader? = null
+    @Volatile private var imageReader: ImageReader? = null
     private var overlay: LinearLayout? = null
     private var statusView: TextView? = null
+    private var botaoIniciar: Button? = null
+    private var botaoPausa: Button? = null
     @Volatile private var statusAtual = "Aguardando início"
+    private var ultimaChave = ""
     @Volatile private var rodando = false
     @Volatile private var rotaIniciada = false
-    @Volatile private var pausado = false
     @Volatile private var pausaManual = false
     @Volatile private var batalhaDetectada = false
     @Volatile private var processando = false
-    private var indicePin = 0
-    private var pinAcionado = false
+    @Volatile private var toqueDesde = 0L
+    @Volatile private var ultimoToque = ""
     private var inicio = 1
     private var fim = 5
-    private var ultimaAcao = 0L
-    private var largura = 0
-    private var altura = 0
-    private var densidade = 0
-    private var ultimoFrame: Bitmap? = null
 
     private val projectionCallback = object : MediaProjection.Callback() {
         override fun onStop() {
@@ -82,8 +78,13 @@ class BotService : Service() {
     private val ciclo = object : Runnable {
         override fun run() {
             if (!rodando) return
-            executarCiclo()
-            workerHandler.postDelayed(this, 450L)
+            try {
+                executarCiclo()
+            } catch (e: Exception) {
+                RelatorioErro.registrar(this@BotService, "Erro no ciclo", e)
+                registrarStatus("Erro: ${e.javaClass.simpleName}")
+            }
+            if (rodando) workerHandler.postDelayed(this, INTERVALO_CICLO_MS)
         }
     }
 
@@ -99,12 +100,10 @@ class BotService : Service() {
             ACAO_INICIAR -> iniciar(intent)
             ACAO_PAUSAR -> {
                 pausaManual = true
-                pausado = true
                 atualizarBotao()
             }
             ACAO_RETOMAR -> {
                 pausaManual = false
-                pausado = batalhaDetectada
                 atualizarBotao()
             }
             ACAO_PARAR -> pararTudo("RotaBot encerrado.")
@@ -113,33 +112,36 @@ class BotService : Service() {
     }
 
     private fun iniciar(intent: Intent) {
+        // O Android exige startForeground logo depois de startForegroundService,
+        // mesmo que o início falhe logo em seguida. Por isso vem primeiro.
+        iniciarNotificacao()
         if (rodando) return
         if (!Settings.canDrawOverlays(this) || ToqueService.instance == null) {
             pararTudo("Ative sobreposição e acessibilidade antes de iniciar.")
             return
         }
-        inicio = intent.getIntExtra(EXTRA_INICIO, 1).coerceIn(1, 5)
-        fim = intent.getIntExtra(EXTRA_FIM, 5).coerceIn(inicio, 5)
+        inicio = intent.getIntExtra(EXTRA_INICIO, 1).coerceIn(1, Cal.TOTAL_ICONES)
+        fim = intent.getIntExtra(EXTRA_FIM, 5).coerceIn(inicio, Cal.TOTAL_ICONES)
         val resultCode = intent.getIntExtra(EXTRA_RESULTADO, 0)
         val data = if (Build.VERSION.SDK_INT >= 33) {
             intent.getParcelableExtra(EXTRA_DADOS, Intent::class.java)
         } else {
             @Suppress("DEPRECATION")
-            intent.getParcelableExtra(EXTRA_DADOS)
+            intent.getParcelableExtra<Intent>(EXTRA_DADOS)
         }
         if (resultCode != Activity.RESULT_OK || data == null) {
             pararTudo("Autorização de captura ausente. Abra o RotaBot e autorize novamente.")
             return
         }
 
-        iniciarNotificacao()
+        // Se já havia uma captura ou controles de uma execução anterior, libera antes.
+        liberarCaptura()
+        removerOverlay()
+
         val metrics = DisplayMetrics()
         @Suppress("DEPRECATION")
         (getSystemService(WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealMetrics(metrics)
-        largura = metrics.widthPixels
-        altura = metrics.heightPixels
-        densidade = metrics.densityDpi
-        if (largura <= 0 || altura <= 0) {
+        if (metrics.widthPixels <= 0 || metrics.heightPixels <= 0) {
             pararTudo("Não foi possível identificar o tamanho da tela.")
             return
         }
@@ -147,10 +149,11 @@ class BotService : Service() {
         try {
             val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             projection = manager.getMediaProjection(resultCode, data)
+            // Android 14+ exige registrar o callback antes de criar a captura.
             projection?.registerCallback(projectionCallback, workerHandler)
-            imageReader = ImageReader.newInstance(largura, altura, PixelFormat.RGBA_8888, 2)
+            imageReader = ImageReader.newInstance(metrics.widthPixels, metrics.heightPixels, PixelFormat.RGBA_8888, 2)
             virtualDisplay = projection?.createVirtualDisplay(
-                "RotaBotScreenCapture", largura, altura, densidade,
+                "RotaBotScreenCapture", metrics.widthPixels, metrics.heightPixels, metrics.densityDpi,
                 DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
                 imageReader?.surface, null, workerHandler
             )
@@ -158,16 +161,20 @@ class BotService : Service() {
                 pararTudo("Não foi possível iniciar a captura da tela.")
                 return
             }
-            val pinsCarregados = Rota.carregarPins(this, inicio, fim)
-            if (pinsCarregados.isEmpty()) { pararTudo("Não encontrei os arquivos dos marcadores selecionados."); return }
-            statusAtual = "Captura pronta. Toque em Iniciar rota."
-            indicePin = 0
-            pinAcionado = false
+            // Os ícones são ajustados pela largura da tela deitada (o lado maior),
+            // mesmo que o app tenha sido aberto com o celular em pé.
+            Rota.carregar(this, inicio, fim, maxOf(metrics.widthPixels, metrics.heightPixels))
+            if (Rota.quantidade() == 0) {
+                pararTudo("Não encontrei os arquivos dos marcadores selecionados.")
+                return
+            }
+            statusAtual = "Captura pronta. Toque em Iniciar."
             rodando = false
             rotaIniciada = false
-            pausado = false
             pausaManual = false
             batalhaDetectada = false
+            processando = false
+            ultimoToque = ""
             criarOverlay()
         } catch (e: Exception) {
             RelatorioErro.registrar(this, "Falha ao iniciar captura", e)
@@ -176,235 +183,129 @@ class BotService : Service() {
         }
     }
 
+    /** Se o celular girou, recria o leitor com o tamanho novo da tela. */
+    private fun ajustarRotacao() {
+        val atual = imageReader ?: return
+        val m = DisplayMetrics()
+        @Suppress("DEPRECATION")
+        (getSystemService(WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealMetrics(m)
+        if (m.widthPixels == atual.width && m.heightPixels == atual.height) return
+        val novo = ImageReader.newInstance(m.widthPixels, m.heightPixels, PixelFormat.RGBA_8888, 2)
+        virtualDisplay?.resize(m.widthPixels, m.heightPixels, m.densityDpi)
+        virtualDisplay?.surface = novo.surface
+        imageReader = novo
+        atual.close()
+    }
+
     private fun executarCiclo() {
-        if (processando) return
-        val image = try { imageReader?.acquireLatestImage() } catch (e: Exception) { registrarStatus("Falha na captura: ${e.message}"); null } ?: run { registrarStatus("Aguardando imagem da tela..."); return }
-        val frame = try {
+        if (processando) {
+            // se o Android nunca avisar o fim do toque, não trava para sempre
+            if (SystemClock.uptimeMillis() - toqueDesde < 3000L) return
+            processando = false
+        }
+        ajustarRotacao()
+        val image = try {
+            imageReader?.acquireLatestImage()
+        } catch (e: Exception) {
+            registrarStatus("Falha na captura: ${e.message}")
+            null
+        }
+        if (image == null) {
+            registrarStatus("Aguardando imagem da tela...")
+            return
+        }
+        val frame: Bitmap? = try {
             val plane = image.planes[0]
-            val buffer = plane.buffer
-            val pixelStride = plane.pixelStride
-            val rowStride = plane.rowStride
-            val rowPixels = rowStride / pixelStride
-            val raw = Bitmap.createBitmap(rowPixels, altura, Bitmap.Config.ARGB_8888)
-            raw.copyPixelsFromBuffer(buffer)
-            val cropped = Bitmap.createBitmap(raw, 0, 0, largura, altura)
-            raw.recycle()
-            cropped
+            val rowPixels = plane.rowStride / plane.pixelStride
+            val raw = Bitmap.createBitmap(rowPixels, image.height, Bitmap.Config.ARGB_8888)
+            raw.copyPixelsFromBuffer(plane.buffer)
+            if (rowPixels != image.width) {
+                // tira a sobra de bytes no fim de cada linha
+                val cortado = Bitmap.createBitmap(raw, 0, 0, image.width, image.height)
+                raw.recycle()
+                cortado
+            } else {
+                raw
+            }
         } catch (e: Exception) {
             RelatorioErro.registrar(this, "Erro ao ler frame", e)
-            android.util.Log.e("RotaBot", "Erro ao ler frame", e)
             null
         } finally {
             image.close()
-        } ?: return
-
-        ultimoFrame?.recycle()
-        ultimoFrame = frame
-        // Analisa somente a faixa superior do painel de batalha, onde aparece
-        // o primeiro indicador do Pokémon. O restante do painel é ignorado.
-        val battleRect = Rect(
-            (largura * 0.055f).toInt(), (altura * 0.115f).toInt(),
-            (largura * 0.185f).toInt(), (altura * 0.225f).toInt()
-        )
-        val battle = frame.safeCrop(battleRect) ?: return
-        batalhaDetectada = temCorForaDoAzulPadrao(battle)
-        battle.recycle()
-        pausado = pausaManual || batalhaDetectada
-        atualizarBotao()
-        if (pausado) { registrarStatus(if (pausaManual) "Pausado manualmente" else "Pausado: batalha detectada"); return }
-
-        val pins = Rota.obterPins()
-        if (pins.isEmpty()) { registrarStatus("Nenhum marcador carregado."); return }
-        val mapRect = Rect(
-            (largura * 0.80f).toInt(), (altura * 0.05f).toInt(),
-            (largura * 0.99f).toInt(), (altura * 0.50f).toInt()
-        )
-        val minimapa = frame.safeCrop(mapRect) ?: run { registrarStatus("Não consegui recortar o minimapa."); return }
-        val pin = pins.getOrNull(indicePin) ?: run { minimapa.recycle(); return }
-        val pinPos = localizarTemplate(minimapa, pin.bitmap)
-        val jogador = localizarCruzBranca(minimapa)
-        if (pinPos == null) {
-            registrarStatus("Não encontrei o marcador ${indicePin + inicio} no minimapa. Confira a imagem do pin.")
-        } else {
-            val agora = System.currentTimeMillis()
-            val distancia = jogador?.let {
-                sqrt(
-                    ((pinPos.first - it.first) * (pinPos.first - it.first) +
-                     (pinPos.second - it.second) * (pinPos.second - it.second)).toDouble()
-                )
-            }
-            if (distancia != null && distancia <= maxOf(18.0, pin.bitmap.width * 1.25)) {
-                indicePin = if (indicePin >= pins.lastIndex) 0 else indicePin + 1
-                pinAcionado = false
-                ultimaAcao = agora
-                registrarStatus("Cheguei ao marcador. Próximo: ${indicePin + inicio}.")
-            } else if (!pinAcionado || agora - ultimaAcao > 2800L) {
-                // Não bloqueia o toque caso a cruz branca não seja reconhecida.
-                // Reenvia após 2,8 s se o jogo não moveu o jogador até o destino.
-                processando = true
-                pinAcionado = false
-                val x = mapRect.left + pinPos.first
-                val y = mapRect.top + pinPos.second
-                registrarStatus("Tentando tocar no marcador ${indicePin + inicio} em $x,$y. Jogador: ${if (jogador == null) "não localizado" else "localizado"}.")
-                val aceito = ToqueService.clicar(x.toFloat(), y.toFloat()) { sucesso, mensagem ->
-                    processando = false
-                    registrarStatus(mensagem)
-                    if (sucesso) {
-                        pinAcionado = true
-                        ultimaAcao = System.currentTimeMillis()
-                    } else {
-                        pinAcionado = false
-                        ultimaAcao = System.currentTimeMillis()
-                    }
-                }
-                if (!aceito) {
-                    processando = false
-                    pinAcionado = false
-                    ultimaAcao = agora
-                    registrarStatus("Android recusou o toque. Acessibilidade pode estar desconectada.")
-                }
-            } else if (jogador == null) {
-                registrarStatus("Marcador tocado; aguardando o movimento. Cruz branca não localizada.")
-            } else {
-                registrarStatus("Aguardando chegar ao marcador ${indicePin + inicio}.")
-            }
         }
-        minimapa.recycle()
+        if (frame == null) return
+
+        try {
+            val resultado = if (pausaManual) {
+                "Pausado manualmente"
+            } else {
+                Rota.passo(frame) { x, y -> tocarNaTela(x, y) }
+            }
+            val emLuta = resultado.startsWith("LUTA")
+            if (emLuta != batalhaDetectada) {
+                batalhaDetectada = emLuta
+                atualizarBotao()
+            }
+            registrarStatus(if (ultimoToque.isEmpty()) resultado else "$resultado | $ultimoToque")
+        } finally {
+            frame.recycle()
+        }
+    }
+
+    private fun tocarNaTela(x: Float, y: Float) {
+        if (processando) return
+        processando = true
+        toqueDesde = SystemClock.uptimeMillis()
+        val aceito = ToqueService.clicar(x, y) { _, mensagem ->
+            ultimoToque = mensagem
+            processando = false
+        }
+        if (!aceito) {
+            processando = false
+            ultimoToque = "Android recusou o toque (acessibilidade desconectada?)"
+        }
     }
 
     private fun registrarStatus(mensagem: String) {
         if (statusAtual == mensagem) return
         statusAtual = mensagem
-        RelatorioErro.registrar(this, "Status: $mensagem")
+        // No relatório entra só quando o tipo de estado muda (sem os números),
+        // para não encher de linhas parecidas a cada leitura.
+        val chave = mensagem.replace(Regex("[0-9.,]+"), "#")
+        if (chave != ultimaChave) {
+            ultimaChave = chave
+            RelatorioErro.registrar(this, "Status: $mensagem")
+        }
         handler.post { statusView?.text = mensagem }
-    }
-
-    private fun temCorForaDoAzulPadrao(bitmap: Bitmap): Boolean {
-        // A faixa é reduzida às margens internas para ignorar bordas do painel.
-        // Considera batalha quando existe uma pequena área colorida fora do azul,
-        // mas ignora pixels isolados de compressão e antialiasing.
-        if (bitmap.width < 5 || bitmap.height < 5) return false
-        var total = 0
-        var naoAzuis = 0
-        val largura = bitmap.width - 4
-        val altura = bitmap.height - 4
-        val mascara = BooleanArray(largura * altura)
-        for (y in 2 until bitmap.height - 2) {
-            for (x in 2 until bitmap.width - 2) {
-                val c = bitmap.getPixel(x, y)
-                val r = Color.red(c)
-                val g = Color.green(c)
-                val b = Color.blue(c)
-                val azulEscuro = r <= 78 && g <= 100 && b in 30..165 &&
-                    b >= r + 7 && b >= g - 15
-                val diferente = !azulEscuro
-                val i = (y - 2) * largura + (x - 2)
-                mascara[i] = diferente
-                total++
-                if (diferente) naoAzuis++
-            }
-        }
-        if (total == 0) return false
-
-        // Exige apenas 0,35% de pixels diferentes, com ao menos um pequeno
-        // agrupamento 2x2. Isso detecta o ícone pequeno sem disparar por 1 pixel.
-        if (naoAzuis < maxOf(4, total / 285)) return false
-        for (y in 0 until altura - 1) {
-            for (x in 0 until largura - 1) {
-                val i = y * largura + x
-                if (mascara[i] && mascara[i + 1] &&
-                    mascara[i + largura] && mascara[i + largura + 1]) return true
-            }
-        }
-        return false
-    }
-
-    private fun localizarCruzBranca(map: Bitmap): Pair<Int, Int>? {
-        var bestX = -1
-        var bestY = -1
-        var bestScore = 0
-        val xMin = (map.width * 0.45f).toInt()
-        val xMax = (map.width * 0.99f).toInt()
-        val yMin = (map.height * 0.05f).toInt()
-        val yMax = (map.height * 0.95f).toInt()
-        for (y in yMin until yMax step 2) {
-            for (x in xMin until xMax step 2) {
-                val c = map.getPixel(x, y)
-                if (Color.red(c) > 225 && Color.green(c) > 225 && Color.blue(c) > 225) {
-                    var score = 0
-                    for (d in 2..8 step 2) {
-                        if (x-d >= 0 && isWhite(map.getPixel(x-d,y))) score++
-                        if (x+d < map.width && isWhite(map.getPixel(x+d,y))) score++
-                        if (y-d >= 0 && isWhite(map.getPixel(x,y-d))) score++
-                        if (y+d < map.height && isWhite(map.getPixel(x,y+d))) score++
-                    }
-                    if (score > bestScore) { bestScore = score; bestX = x; bestY = y }
-                }
-            }
-        }
-        return if (bestScore >= 4) Pair(bestX, bestY) else null
-    }
-
-    private fun isWhite(c: Int) = Color.red(c) > 225 && Color.green(c) > 225 && Color.blue(c) > 225
-
-    private fun localizarTemplate(area: Bitmap, template: Bitmap): Pair<Int, Int>? {
-        if (template.width >= area.width || template.height >= area.height) return null
-        val step = 2
-        for (y in 0..(area.height-template.height) step step) {
-            for (x in 0..(area.width-template.width) step step) {
-                if (validarTemplate(area, template, x, y)) {
-                    return Pair(x + template.width/2, y + template.height/2)
-                }
-            }
-        }
-        return null
-    }
-
-    private fun validarTemplate(area: Bitmap, template: Bitmap, sx: Int, sy: Int): Boolean {
-        var acertos = 0
-        var total = 0
-        for (y in 0 until template.height step 2) {
-            for (x in 0 until template.width step 2) {
-                val esperado = template.getPixel(x,y)
-                if (Color.alpha(esperado) < 150) continue
-                total++
-                val atual = area.getPixel(sx+x,sy+y)
-                if (abs(Color.red(atual)-Color.red(esperado)) <= 38 &&
-                    abs(Color.green(atual)-Color.green(esperado)) <= 38 &&
-                    abs(Color.blue(atual)-Color.blue(esperado)) <= 38) acertos++
-            }
-        }
-        return total > 0 && acertos.toFloat()/total >= 0.78f
-    }
-
-    private fun Bitmap.safeCrop(rect: Rect): Bitmap? {
-        val l = rect.left.coerceIn(0, width-1)
-        val t = rect.top.coerceIn(0, height-1)
-        val r = rect.right.coerceIn(l+1, width)
-        val b = rect.bottom.coerceIn(t+1, height)
-        return Bitmap.createBitmap(this, l, t, r-l, b-t)
     }
 
     private fun criarOverlay() {
         val wm = getSystemService(WINDOW_SERVICE) as WindowManager
         val painel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(8,8,8,8)
+            setPadding(8, 8, 8, 8)
             setBackgroundColor(Color.argb(220, 25, 25, 25))
         }
-        val status = TextView(this).apply { text = statusAtual; setTextColor(Color.WHITE); textSize = 12f; setPadding(8, 4, 8, 8) }
+        val status = TextView(this).apply {
+            text = statusAtual
+            setTextColor(Color.WHITE)
+            textSize = 12f
+            setPadding(8, 4, 8, 8)
+            maxWidth = 640
+        }
         statusView = status
+        val linha = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val start = Button(this).apply {
-            text = "Iniciar rota"
+            text = "Iniciar"
             setOnClickListener {
                 if (!rotaIniciada) {
+                    Rota.resetar()
                     rotaIniciada = true
                     rodando = true
                     pausaManual = false
-                    pausado = false
-                    isEnabled = false
-                    workerHandler.post(ciclo)
+                    batalhaDetectada = false
                     atualizarBotao()
+                    workerHandler.post(ciclo)
                 }
             }
         }
@@ -413,29 +314,34 @@ class BotService : Service() {
             isEnabled = false
             setOnClickListener {
                 pausaManual = !pausaManual
-                pausado = pausaManual || batalhaDetectada
-                text = if (pausaManual) "Retomar" else if (batalhaDetectada) "Em batalha" else "Pausar"
+                atualizarBotao()
             }
         }
         val stop = Button(this).apply {
             text = "Parar"
             setOnClickListener { pararTudo("RotaBot encerrado.") }
         }
+        linha.addView(start)
+        linha.addView(toggle)
+        linha.addView(stop)
         painel.addView(status)
-        painel.addView(start)
-        painel.addView(toggle)
-        painel.addView(stop)
+        painel.addView(linha)
+        botaoIniciar = start
+        botaoPausa = toggle
+
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
-            if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY else WindowManager.LayoutParams.TYPE_PHONE,
+            if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+            else @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
             PixelFormat.TRANSLUCENT
         ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            // O minimapa fica à direita. O painel do bot não pode cobri-lo,
-            // pois a captura usa exatamente a imagem dessa região.
-            x = ((largura - 250) / 2).coerceAtLeast(0)
+            // Centralizado no alto da tela, longe do minimapa (direita) e da lista de
+            // batalha (esquerda): a captura enxerga os controles e eles não podem cobrir
+            // essas áreas.
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            x = 0
             y = 12
         }
         var toqueX = 0f
@@ -449,12 +355,15 @@ class BotService : Service() {
                     toqueY = event.rawY
                     inicioX = params.x
                     inicioY = params.y
-                    false
+                    true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    params.x = (inicioX + event.rawX - toqueX).toInt().coerceAtLeast(0)
+                    params.x = (inicioX + event.rawX - toqueX).toInt()
                     params.y = (inicioY + event.rawY - toqueY).toInt().coerceAtLeast(0)
-                    try { wm.updateViewLayout(painel, params) } catch (_: Exception) {}
+                    try {
+                        wm.updateViewLayout(painel, params)
+                    } catch (_: Exception) {
+                    }
                     true
                 }
                 else -> false
@@ -471,12 +380,9 @@ class BotService : Service() {
 
     private fun atualizarBotao() {
         handler.post {
-            val painel = overlay ?: return@post
-            val iniciar = painel.getChildAt(1) as? Button
-            val toggle = painel.getChildAt(2) as? Button
-            iniciar?.isEnabled = !rotaIniciada
-            toggle?.isEnabled = rotaIniciada
-            toggle?.text = if (pausaManual) "Retomar" else if (batalhaDetectada) "Em batalha" else "Pausar"
+            botaoIniciar?.isEnabled = !rotaIniciada
+            botaoPausa?.isEnabled = rotaIniciada
+            botaoPausa?.text = if (pausaManual) "Retomar" else if (batalhaDetectada) "Em luta" else "Pausar"
         }
     }
 
@@ -489,7 +395,9 @@ class BotService : Service() {
             .build()
         if (Build.VERSION.SDK_INT >= 29) {
             startForeground(NOTIFICACAO_ID, notification, android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
-        } else startForeground(NOTIFICACAO_ID, notification)
+        } else {
+            startForeground(NOTIFICACAO_ID, notification)
+        }
     }
 
     private fun criarCanal() {
@@ -499,19 +407,19 @@ class BotService : Service() {
         }
     }
 
-    private fun pararTudo(mensagem: String) {
-        rodando = false
-        rotaIniciada = false
-        pausado = false
-        pausaManual = false
-        batalhaDetectada = false
-        workerHandler.removeCallbacks(ciclo)
+    private fun removerOverlay() {
         try {
             val wm = getSystemService(WINDOW_SERVICE) as WindowManager
             overlay?.let { wm.removeView(it) }
-        } catch (_: Exception) {}
+        } catch (_: Exception) {
+        }
         overlay = null
         statusView = null
+        botaoIniciar = null
+        botaoPausa = null
+    }
+
+    private fun liberarCaptura() {
         virtualDisplay?.release()
         virtualDisplay = null
         imageReader?.close()
@@ -519,10 +427,23 @@ class BotService : Service() {
         projection?.unregisterCallback(projectionCallback)
         projection?.stop()
         projection = null
-        ultimoFrame?.recycle()
-        ultimoFrame = null
+    }
+
+    private fun pararTudo(mensagem: String) {
+        // Mexer em janelas e no serviço só pode ser na thread principal.
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            handler.post { pararTudo(mensagem) }
+            return
+        }
+        rodando = false
+        rotaIniciada = false
+        pausaManual = false
+        batalhaDetectada = false
+        workerHandler.removeCallbacks(ciclo)
+        removerOverlay()
+        liberarCaptura()
         Rota.limpar()
-        if (mensagem.isNotBlank()) handler.post { Toast.makeText(this, mensagem, Toast.LENGTH_LONG).show() }
+        if (mensagem.isNotBlank()) Toast.makeText(this, mensagem, Toast.LENGTH_LONG).show()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }

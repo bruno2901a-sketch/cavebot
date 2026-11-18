@@ -24,22 +24,27 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         RelatorioErro.instalar(this)
+        // Ao girar o celular a tela é recriada: guarda a autorização de captura.
+        if (savedInstanceState != null) {
+            resultadoCaptura = savedInstanceState.getInt("resultado", 0)
+            dadosCaptura = savedInstanceState.getParcelable<Intent>("dados")
+        }
 
         val tela = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(36, 36, 36, 36)
         }
         val titulo = TextView(this).apply {
-            text = "RotaBot\n\n1. Permita a sobreposição.\n2. Ative o serviço de acessibilidade.\n3. Autorize a captura da tela.\n4. Escolha os marcadores inicial e final (1 a 5) e toque em Iniciar.\n\nDurante a rota, use os controles flutuantes para pausar ou encerrar."
+            text = "RotaBot\n\n1. Permita a sobreposição.\n2. Ative o serviço de acessibilidade.\n3. Autorize a captura da tela.\n4. Escolha os marcadores inicial e final (1 a 20) e toque em Iniciar.\n\nNo jogo, deixe o celular deitado e o painel Batalha aberto, no lugar de sempre. Depois toque em Iniciar nos controles flutuantes."
             textSize = 16f
         }
         val inicio = EditText(this).apply {
-            hint = "Marcador inicial (1 a 5)"
+            hint = "Marcador inicial (1 a 20)"
             setText("1")
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
         }
         val fim = EditText(this).apply {
-            hint = "Marcador final (1 a 5)"
+            hint = "Marcador final (1 a 20)"
             setText("5")
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
         }
@@ -67,8 +72,8 @@ class MainActivity : Activity() {
             setOnClickListener {
                 val a = inicio.text.toString().toIntOrNull()
                 val b = fim.text.toString().toIntOrNull()
-                if (a == null || b == null || a !in 1..5 || b !in 1..5 || a > b) {
-                    Toast.makeText(this@MainActivity, "Escolha marcadores entre 1 e 5. O inicial deve ser menor ou igual ao final.", Toast.LENGTH_LONG).show()
+                if (a == null || b == null || a !in 1..20 || b !in 1..20 || a > b) {
+                    Toast.makeText(this@MainActivity, "Escolha marcadores entre 1 e 20. O inicial deve ser menor ou igual ao final.", Toast.LENGTH_LONG).show()
                     return@setOnClickListener
                 }
                 if (!Settings.canDrawOverlays(this@MainActivity)) {
@@ -132,6 +137,12 @@ class MainActivity : Activity() {
         }
         tela.addView(relatorio)
         setContentView(tela)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putInt("resultado", resultadoCaptura)
+        outState.putParcelable("dados", dadosCaptura)
     }
 
     @Deprecated("Deprecated in Android API")
