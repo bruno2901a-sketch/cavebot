@@ -94,20 +94,13 @@ class BotService : Service() {
     private var usaAlerta = true
 
     private val projectionCallback = object : MediaProjection.Callback() {
-        override fun onStop() {
-            pararTudo("A captura de tela foi encerrada pelo Android.")
-        }
+        override fun onStop() { pararTudo("Captura encerrada.") }
     }
 
     private val ciclo = object : Runnable {
         override fun run() {
             if (!rodando) return
-            try {
-                executarCiclo()
-            } catch (e: Exception) {
-                RelatorioErro.registrar(this@BotService, "Erro no ciclo", e)
-                registrarStatus("Erro: ${e.javaClass.simpleName}")
-            }
+            try { executarCiclo() } catch (e: Exception) { registrarStatus("Erro: ${e.javaClass.simpleName}") }
             if (rodando) workerHandler.postDelayed(this, INTERVALO_CICLO_MS)
         }
     }
@@ -124,9 +117,9 @@ class BotService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACAO_INICIAR -> iniciar(intent)
-            ACAO_PAUSAR -> { pausaManual = true; atualizarBotao() }
-            ACAO_RETOMAR -> { pausaManual = false; atualizarBotao() }
-            ACAO_PARAR -> pararTudo("RotaBot encerrado.")
+            ACAO_PAUSAR -> { pausaManual = true }
+            ACAO_RETOMAR -> { pausaManual = false }
+            ACAO_PARAR -> pararTudo("Encerrado.")
         }
         return START_NOT_STICKY
     }
@@ -134,10 +127,6 @@ class BotService : Service() {
     private fun iniciar(intent: Intent) {
         iniciarNotificacao()
         if (rodando) return
-        if (!Settings.canDrawOverlays(this) || ToqueService.instance == null) {
-            pararTudo("Ative sobreposição e acessibilidade antes de iniciar.")
-            return
-        }
         inicio = intent.getIntExtra(EXTRA_INICIO, 1).coerceIn(1, Cal.TOTAL_ICONES)
         fim = intent.getIntExtra(EXTRA_FIM, 5).coerceIn(inicio, Cal.TOTAL_ICONES)
         usaLoot = intent.getBooleanExtra(EXTRA_USA_LOOT, false)
@@ -150,10 +139,7 @@ class BotService : Service() {
             @Suppress("DEPRECATION")
             intent.getParcelableExtra<Intent>(EXTRA_DADOS)
         }
-        if (resultCode != Activity.RESULT_OK || data == null) {
-            pararTudo("Autorização de captura ausente.")
-            return
-        }
+        if (resultCode != Activity.RESULT_OK || data == null) { pararTudo("Erro auth"); return }
 
         liberarCaptura()
         removerOverlay()
@@ -162,28 +148,22 @@ class BotService : Service() {
         @Suppress("DEPRECATION")
         (getSystemService(WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealMetrics(metrics)
 
-        try {
-            val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-            projection = manager.getMediaProjection(resultCode, data)
-            projection?.registerCallback(projectionCallback, workerHandler)
-            imageReader = ImageReader.newInstance(metrics.widthPixels, metrics.heightPixels, PixelFormat.RGBA_8888, 2)
-            virtualDisplay = projection?.createVirtualDisplay(
-                "RotaBotScreenCapture", metrics.widthPixels, metrics.heightPixels, metrics.densityDpi,
-                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                imageReader?.surface, null, workerHandler
-            )
-            Rota.carregar(this, inicio, fim, maxOf(metrics.widthPixels, metrics.heightPixels))
-            statusAtual = "Captura pronta. Toque em Iniciar."
-            rodando = false
-            rotaIniciada = false
-            pausaManual = false
-            batalhaDetectada = false
-            processando = false
-            ultimoToque = ""
-            criarOverlay()
-        } catch (e: Exception) {
-            pararTudo("Falha ao iniciar: ${e.message}")
-        }
+        val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+        projection = manager.getMediaProjection(resultCode, data)
+        projection?.registerCallback(projectionCallback, workerHandler)
+        imageReader = ImageReader.newInstance(metrics.widthPixels, metrics.heightPixels, PixelFormat.RGBA_8888, 2)
+        virtualDisplay = projection?.createVirtualDisplay(
+            "RotaBotScreenCapture", metrics.widthPixels, metrics.heightPixels, metrics.densityDpi,
+            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, imageReader?.surface, null, workerHandler
+        )
+        Rota.carregar(this, inicio, fim, maxOf(metrics.widthPixels, metrics.heightPixels))
+        rodando = false
+        rotaIniciada = false
+        pausaManual = false
+        batalhaDetectada = false
+        processando = false
+        ultimoToque = ""
+        criarOverlay()
     }
 
     private fun ajustarRotacao() {
@@ -205,7 +185,7 @@ class BotService : Service() {
             processando = false
         }
         ajustarRotacao()
-        val image = try { imageReader?.acquireLatestImage() } catch (e: Exception) { null } ?: return
+        val image = try { imageReader?.acquireLatestImage() } catch (_: Exception) { null } ?: return
         val frame: Bitmap? = try {
             val plane = image.planes[0]
             val rowPixels = plane.rowStride / plane.pixelStride
@@ -216,20 +196,11 @@ class BotService : Service() {
                 raw.recycle()
                 cortado
             } else raw
-        } catch (e: Exception) {
-            null
-        } finally {
-            image.close()
-        }
+        } catch (_: Exception) { null } finally { image.close() }
         if (frame == null) return
 
         try {
-            val resultado = if (pausaManual) "Pausado manualmente" else Rota.passo(frame, this, usaLoot, usaAlerta) { x, y -> tocarNaTela(x, y) }
-            val emLuta = resultado.startsWith("LUTA") || resultado.startsWith("ALERTA")
-            if (emLuta != batalhaDetectada) {
-                batalhaDetectada = emLuta
-                atualizarBotao()
-            }
+            val resultado = if (pausaManual) "Pausado" else Rota.passo(frame, this, usaLoot, usaAlerta) { x, y -> tocarNaTela(x, y) }
             registrarStatus(if (ultimoToque.isEmpty()) resultado else "$resultado | $ultimoToque")
         } finally {
             frame.recycle()
@@ -240,25 +211,17 @@ class BotService : Service() {
         if (processando) return
         processando = true
         toqueDesde = SystemClock.uptimeMillis()
-        val aceito = ToqueService.clicar(x, y) { _, mensagem ->
-            ultimoToque = mensagem
+        val aceito = ToqueService.clicar(x, y) { _, msg ->
+            ultimoToque = msg
             processando = false
         }
-        if (!aceito) {
-            processando = false
-            ultimoToque = "Android recusou o toque"
-        }
+        if (!aceito) { processando = false }
     }
 
-    private fun registrarStatus(mensagem: String) {
-        if (statusAtual == mensagem) return
-        statusAtual = mensagem
-        val chave = mensagem.replace(Regex("[0-9.,]+"), "#")
-        if (chave != ultimaChave) {
-            ultimaChave = chave
-            RelatorioErro.registrar(this, "Status: $mensagem")
-        }
-        handler.post { statusView?.text = mensagem }
+    private fun registrarStatus(msg: String) {
+        if (statusAtual == msg) return
+        statusAtual = msg
+        handler.post { statusView?.text = msg }
     }
 
     private fun criarOverlay() {
@@ -288,7 +251,6 @@ class BotService : Service() {
                         rotaIniciada = true
                         rodando = true
                         pausaManual = false
-                        batalhaDetectada = false
                         text = "Pausar"
                         workerHandler.post(ciclo)
                     } else {
@@ -299,26 +261,22 @@ class BotService : Service() {
             }
             val btnParar = Button(this).apply {
                 text = "Parar"
-                setOnClickListener { pararTudo("RotaBot encerrado.") }
+                setOnClickListener { pararTudo("Encerrado.") }
             }
             linha.addView(btnIniciarPausar)
             linha.addView(btnParar)
             painel.addView(linha)
 
             val params = WindowManager.LayoutParams(
-                WindowManager.LayoutParams.WRAP_CONTENT,
-                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
                 if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                 else WindowManager.LayoutParams.TYPE_PHONE,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-                PixelFormat.TRANSLUCENT
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT
             ).apply { gravity = Gravity.TOP or Gravity.START; x = 100; y = 100 }
 
             try { wm.addView(painel, params) } catch (_: Exception) {}
         }
     }
-
-    private fun atualizarBotao() {}
 
     private fun removerOverlay() {
         pararAlarme()
@@ -348,12 +306,11 @@ class BotService : Service() {
 
     private fun iniciarNotificacao() {
         if (Build.VERSION.SDK_INT >= 26) {
-            val channel = NotificationChannel(CANAL, "RotaBot Service", NotificationManager.IMPORTANCE_LOW)
+            val channel = NotificationChannel(CANAL, "RotaBot", NotificationManager.IMPORTANCE_LOW)
             (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(channel)
         }
         val notification = NotificationCompat.Builder(this, CANAL)
             .setContentTitle("RotaBot Ativo")
-            .setContentText("Cavebot rodando em segundo plano")
             .setSmallIcon(android.R.drawable.ic_menu_compass)
             .build()
         startForeground(NOTIFICACAO_ID, notification)
@@ -361,7 +318,7 @@ class BotService : Service() {
 
     override fun onDestroy() {
         pararAlarme()
-        pararTudo("Serviço destruído.")
+        pararTudo("Destruído.")
         workerThread.quitSafely()
         super.onDestroy()
     }
