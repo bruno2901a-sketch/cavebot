@@ -11,10 +11,11 @@ object Cal {
     const val MINIMAPA_X1 = 0.996f
     const val MINIMAPA_Y1 = 0.615f
 
+    // Coordenadas ajustadas exatamente para o quadrado vermelho (espaço interno dos pokémons na lista de batalha)
     const val BATALHA_X0 = 0.045f
-    const val BATALHA_Y0 = 0.215f
-    const val BATALHA_X1 = 0.195f
-    const val BATALHA_Y1 = 0.650f
+    const val BATALHA_Y0 = 0.203f
+    const val BATALHA_X1 = 0.181f
+    const val BATALHA_Y1 = 0.392f
 
     const val CHEGOU_FRAC = 0.015f
     const val LIMIAR = 0.90f
@@ -287,12 +288,12 @@ object Rota {
             val g = (p shr 8) and 0xFF
             val b = p and 0xFF
             
-            // Fundo padrão azul-escuro vazio exato do otPokemon
+            // Fundo padrão azul-escuro exato (RGB 11, 16, 35)
             val ehFundoEscuro = (r <= 25 && g <= 30 && b >= 20 && b <= 50)
             
             if (!ehFundoEscuro) {
                 pixelsDiferentes++
-                // Exige pelo menos 100 pixels diferentes para confirmar que há um monstro/player real
+                // Exige pelo menos 100 pixels diferentes estritamente dentro do quadrado vermelho
                 if (pixelsDiferentes >= 100) return true
             }
         }
