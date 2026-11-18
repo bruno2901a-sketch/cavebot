@@ -11,18 +11,17 @@ import android.graphics.Color
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
+import android.media.AudioAttributes
 import android.media.ImageReader
-import android.media.Ringtone
+import android.media.MediaPlayer
 import android.media.RingtoneManager
-import android.media.projection.MediaProjection
-import android.media.projection.MediaProjectionManager
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
 import android.os.SystemClock
-import android.provider.Settings
 import android.util.DisplayMetrics
 import android.view.Gravity
 import android.view.MotionEvent
@@ -45,30 +44,47 @@ class BotService : Service() {
         const val EXTRA_DADOS = "dados"
         const val EXTRA_USA_LOOT = "usa_loot"
         const val EXTRA_USA_ALERTA = "usa_alerta"
+        const val EXTRA_VOLUME = "volume"
+        const val EXTRA_URI_SOM = "uri_som"
+
         private const val CANAL = "rotabot_rota"
         private const val NOTIFICACAO_ID = 71
         private const val INTERVALO_CICLO_MS = 450L
 
-        private var ringtone: Ringtone? = null
+        private var mediaPlayer: MediaPlayer? = null
 
-        fun tocarAlarme(ctx: Context) {
+        fun tocarAlarme(ctx: Context, uriStr: String, volumeProgresso: Int) {
             try {
-                if (ringtone == null) {
-                    val alertUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-                        ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
-                    ringtone = RingtoneManager.getRingtone(ctx, alertUri)
+                if (mediaPlayer == null) {
+                    val uri = if (uriStr.isNotEmpty()) Uri.parse(uriStr) else RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                    mediaPlayer = MediaPlayer().apply {
+                        setDataSource(ctx, uri)
+                        setAudioAttributes(
+                            AudioAttributes.Builder()
+                                .setUsage(AudioAttributes.USAGE_ALARM)
+                                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                                .build()
+                        )
+                        isLooping = true
+                        prepare()
+                    }
                 }
-                if (ringtone?.isPlaying == false) {
-                    ringtone?.play()
+                val vol = (volumeProgresso.coerceIn(0, 100) / 100f)
+                mediaPlayer?.setVolume(vol, vol)
+
+                if (mediaPlayer?.isPlaying == false) {
+                    mediaPlayer?.start()
                 }
             } catch (_: Exception) {}
         }
 
         fun pararAlarme() {
             try {
-                if (ringtone?.isPlaying == true) {
-                    ringtone?.stop()
+                mediaPlayer?.let {
+                    if (it.isPlaying) it.stop()
+                    it.release()
                 }
+                mediaPlayer = null
             } catch (_: Exception) {}
         }
     }
@@ -76,7 +92,7 @@ class BotService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var workerThread: HandlerThread
     private lateinit var workerHandler: Handler
-    private var projection: MediaProjection? = null
+    private var projection: android.media.projection.MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     @Volatile private var imageReader: ImageReader? = null
     private var overlay: LinearLayout? = null
@@ -85,7 +101,6 @@ class BotService : Service() {
     @Volatile private var rodando = false
     @Volatile private var rotaIniciada = false
     @Volatile private var pausaManual = false
-    @Volatile private var batalhaDetectada = false
     @Volatile private var processando = false
     @Volatile private var toqueDesde = 0L
     @Volatile private var ultimoToque = ""
@@ -93,8 +108,10 @@ class BotService : Service() {
     private var fim = 5
     private var usaLoot = false
     private var usaAlerta = true
+    private var volumeAlerta = 80
+    private var uriSomAlerta = ""
 
-    private val projectionCallback = object : MediaProjection.Callback() {
+    private val projectionCallback = object : android.media.projection.MediaProjection.Callback() {
         override fun onStop() { pararTudo("Captura encerrada.") }
     }
 
@@ -140,6 +157,8 @@ class BotService : Service() {
         fim = intent.getIntExtra(EXTRA_FIM, 5).coerceIn(inicio, Cal.TOTAL_ICONES)
         usaLoot = intent.getBooleanExtra(EXTRA_USA_LOOT, false)
         usaAlerta = intent.getBooleanExtra(EXTRA_USA_ALERTA, true)
+        volumeAlerta = intent.getIntExtra(EXTRA_VOLUME, 80)
+        uriSomAlerta = intent.getStringExtra(EXTRA_URI_SOM) ?: ""
 
         val resultCode = intent.getIntExtra(EXTRA_RESULTADO, 0)
         val data = if (Build.VERSION.SDK_INT >= 33) {
@@ -169,7 +188,6 @@ class BotService : Service() {
         rodando = false
         rotaIniciada = false
         pausaManual = false
-        batalhaDetectada = false
         processando = false
         ultimoToque = ""
         criarOverlay()
@@ -209,7 +227,7 @@ class BotService : Service() {
         if (frame == null) return
 
         try {
-            val resultado = if (pausaManual) "Pausado" else Rota.passo(frame, this, usaLoot, usaAlerta) { x, y -> tocarNaTela(x, y) }
+            val resultado = if (pausaManual) "Pausado" else Rota.passo(frame, this, usaLoot, usaAlerta, uriSomAlerta, volumeAlerta) { x, y -> tocarNaTela(x, y) }
             registrarStatus(if (ultimoToque.isEmpty()) resultado else "$resultado | $ultimoToque")
         } finally {
             frame.recycle()
@@ -287,7 +305,6 @@ class BotService : Service() {
                 y = 40
             }
 
-            // Permite arrastar o painel tocando no texto de status ou na borda do painel
             val dragListener = object : View.OnTouchListener {
                 private var initialX = 0
                 private var initialY = 0
