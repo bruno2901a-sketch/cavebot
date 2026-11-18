@@ -124,6 +124,14 @@ class BotService : Service() {
         return START_NOT_STICKY
     }
 
+    private fun criarCanal() {
+        if (Build.VERSION.SDK_INT >= 26) {
+            val channel = NotificationChannel(CANAL, "RotaBot Service", NotificationManager.IMPORTANCE_LOW)
+            val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+            manager.createNotificationChannel(channel)
+        }
+    }
+
     private fun iniciar(intent: Intent) {
         iniciarNotificacao()
         if (rodando) return
