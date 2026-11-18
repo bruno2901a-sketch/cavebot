@@ -35,7 +35,7 @@ class MainActivity : Activity() {
             setPadding(36, 36, 36, 36)
         }
         val titulo = TextView(this).apply {
-            text = "RotaBot\n\n1. Permita a sobreposição.\n2. Ative o serviço de acessibilidade.\n3. Autorize a captura da tela.\n4. Escolha os marcadores e opções abaixo.\n\nNo jogo, deixe o celular deitado e o painel Batalha aberto."
+            text = "RotaBot\n\n1. Permita a sobreposição.\n2. Ative o serviço de acessibilidade.\n3. Autorize a captura da tela.\n4. Escolha os marcadores e opções abaixo."
             textSize = 15f
         }
         val inicio = EditText(this).apply {
@@ -49,13 +49,11 @@ class MainActivity : Activity() {
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
         }
 
-        // Checkbox para Ativar/Desativar Loot
         val checkLoot = CheckBox(this).apply {
             text = "Ativar Autoloot após matar monstro"
             isChecked = false
         }
 
-        // Checkbox para Ativar/Desativar Alerta de Player (> 15s em luta)
         val checkAlerta = CheckBox(this).apply {
             text = "Ativar Alerta Sonoro (Batalha > 15s / Player)"
             isChecked = true
@@ -94,7 +92,7 @@ class MainActivity : Activity() {
                     return@setOnClickListener
                 }
                 if (ToqueService.instance == null) {
-                    Toast.makeText(this@MainActivity, "Ative o RotaBot em Acessibilidade e volte.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@MainActivity, "Ative o RotaBot em Acessibilidade.", Toast.LENGTH_LONG).show()
                     return@setOnClickListener
                 }
                 val dados = dadosCaptura
@@ -125,37 +123,6 @@ class MainActivity : Activity() {
         tela.addView(acessibilidade)
         tela.addView(captura)
         tela.addView(iniciar)
-
-        val relatorio = Button(this).apply {
-            text = "Ver relatório de erro"
-            setOnClickListener {
-                val texto = RelatorioErro.ler(this@MainActivity)
-                if (texto.isNullOrBlank()) {
-                    Toast.makeText(this@MainActivity, "Ainda não há erros registrados.", Toast.LENGTH_SHORT).show()
-                } else {
-                    val campo = EditText(this@MainActivity).apply {
-                        setText(texto)
-                        setTextIsSelectable(true)
-                        isSingleLine = false
-                        setHorizontallyScrolling(false)
-                        textSize = 12f
-                        setPadding(24, 16, 24, 16)
-                    }
-                    AlertDialog.Builder(this@MainActivity)
-                        .setTitle("Relatório — selecione e copie")
-                        .setView(campo)
-                        .setPositiveButton("Copiar tudo") { _, _ ->
-                            val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
-                            clipboard.setPrimaryClip(ClipData.newPlainText("Relatório RotaBot", campo.text.toString()))
-                            Toast.makeText(this@MainActivity, "Relatório copiado.", Toast.LENGTH_LONG).show()
-                        }
-                        .setNeutralButton("Limpar relatório") { _, _ -> RelatorioErro.limpar(this@MainActivity) }
-                        .setNegativeButton("Fechar", null)
-                        .show()
-                }
-            }
-        }
-        tela.addView(relatorio)
         setContentView(tela)
     }
 
@@ -175,7 +142,7 @@ class MainActivity : Activity() {
                 Toast.makeText(this, "Captura autorizada. Toque em Iniciar.", Toast.LENGTH_SHORT).show()
             } else {
                 dadosCaptura = null
-                Toast.makeText(this, "A captura é necessária para usar a rota.", Toast.LENGTH_LONG).show()
+                Toast.makeText(this, "A captura é necessária.", Toast.LENGTH_LONG).show()
             }
         }
     }
