@@ -161,7 +161,7 @@ object Rota {
         }
     }
 
-    fun passo(tela: Bitmap, context: Context, usaLoot: Boolean, usaAlerta: Boolean, tocar: (Float, Float) -> Unit): String {
+    fun passo(tela: Bitmap, context: Context, usaLoot: Boolean, usaAlerta: Boolean, uriSom: String, volume: Int, tocar: (Float, Float) -> Unit): String {
         if (tela.height > tela.width) return "CELULAR EM RETRATO (pausado)"
         if (modelos.isEmpty()) return "SEM ÍCONES CARREGADOS"
 
@@ -178,7 +178,7 @@ object Rota {
                 estavaEmLuta = true
                 tempoInicioLuta = agora
             } else if (usaAlerta && (agora - tempoInicioLuta >= 15000L)) {
-                BotService.tocarAlarme(context)
+                BotService.tocarAlarme(context, uriSom, volume)
                 return "ALERTA: Batalha > 15s (Player?)"
             }
             return "LUTA (pausado)"
@@ -270,11 +270,6 @@ object Rota {
                else "INDO ao pino $indice (${alvo + 1}/$tamanho) [$sentidoStr] $acerto"
     }
 
-    /**
-     * Identifica presença de alvo na lista de batalha analisando alteração 
-     * em relação ao fundo padrão azul-escuro/vazio do painel.
-     * Funciona independentemente da cor da vida (verde, amarela, vermelha ou preta).
-     */
     fun temMonstro(tela: Bitmap): Boolean {
         val x0 = (tela.width * Cal.BATALHA_X0).toInt()
         val y0 = (tela.height * Cal.BATALHA_Y0).toInt()
@@ -291,10 +286,12 @@ object Rota {
             val r = (p shr 16) and 0xFF
             val g = (p shr 8) and 0xFF
             val b = p and 0xFF
-            // Se o pixel fugir do padrão de fundo azul-escuro vazio (ex: ícone, criatura, barras de HP)
-            if (!(r < 30 && g < 30 && b > 40 && b < 100)) {
+            
+            val ehFundoEscuro = (r <= 25 && g <= 30 && b >= 20 && b <= 50)
+            
+            if (!ehFundoEscuro) {
                 pixelsDiferentes++
-                if (pixelsDiferentes >= 35) return true // Alvo detectado na lista de batalha
+                if (pixelsDiferentes >= 45) return true
             }
         }
         return false
