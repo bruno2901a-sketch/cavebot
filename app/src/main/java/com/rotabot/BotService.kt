@@ -15,6 +15,8 @@ import android.media.AudioAttributes
 import android.media.ImageReader
 import android.media.MediaPlayer
 import android.media.RingtoneManager
+import android.media.projection.MediaProjection
+import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Build
 import android.os.Handler
@@ -92,7 +94,7 @@ class BotService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var workerThread: HandlerThread
     private lateinit var workerHandler: Handler
-    private var projection: android.media.projection.MediaProjection? = null
+    private var projection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     @Volatile private var imageReader: ImageReader? = null
     private var overlay: LinearLayout? = null
@@ -111,7 +113,7 @@ class BotService : Service() {
     private var volumeAlerta = 80
     private var uriSomAlerta = ""
 
-    private val projectionCallback = object : android.media.projection.MediaProjection.Callback() {
+    private val projectionCallback = object : MediaProjection.Callback() {
         override fun onStop() { pararTudo("Captura encerrada.") }
     }
 
