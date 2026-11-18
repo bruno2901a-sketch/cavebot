@@ -25,6 +25,25 @@ object Cal {
     const val INTERVALO_CLIQUE = 1500L
     const val TOTAL_ICONES = 20
     const val LADO_ICONE = 26         // tamanho real dos ícones numa tela de 2460 px
+
+    // Coordenadas em fração da tela dos pontos 1 a 8 ao redor do personagem
+    val PONTOS_CORPO = listOf(
+        Pair(0.4890f, 0.5011f), // 1
+        Pair(0.4880f, 0.6082f), // 2
+        Pair(0.5270f, 0.6082f), // 3
+        Pair(0.5660f, 0.5968f), // 4
+        Pair(0.5650f, 0.4989f), // 5
+        Pair(0.4890f, 0.4077f), // 6
+        Pair(0.5260f, 0.3964f), // 7
+        Pair(0.5680f, 0.3986f)  // 8
+    )
+
+    // Coordenadas em fração da tela das janelas de loot na sequência exata: 2, 3, 4
+    val PONTOS_LOOT = listOf(
+        Pair(0.8630f, 0.1731f), // 2
+        Pair(0.6960f, 0.1663f), // 3
+        Pair(0.5470f, 0.1754f)  // 4
+    )
 }
 
 private fun cinza(p: Int): Double =
@@ -65,6 +84,7 @@ object Rota {
     private var semProgresso = 0          // toques seguidos sem chegar mais perto
     private var naoVisto = 0              // leituras seguidas sem achar o pino
     private var ultimaDistVista = -1f     // distância da última vez que o pino foi visto
+    private var estavaEmLuta = false      // controla se havia monstro na leitura anterior
     @Volatile private var melhorScore = 0.0
 
     /** Carrega os ícones de [inicio] a [fim] já no tamanho certo para a largura da tela. */
@@ -97,6 +117,7 @@ object Rota {
         semProgresso = 0
         naoVisto = 0
         ultimaDistVista = -1f
+        estavaEmLuta = false
     }
 
     private fun proximoPino() {
@@ -107,6 +128,36 @@ object Rota {
         semProgresso = 0
         naoVisto = 0
         ultimaDistVista = -1f
+    }
+
+    /** Executa a rotina completa de autoloot após o monstro morrer. */
+    private fun executarAutoloot(larguraTela: Int, alturaTela: Int) {
+        // 1. Espera 1 segundo para o monstro cair e gerar o corpo no chão
+        SystemClock.sleep(1000L)
+
+        // 2. Dá 2 cliques no centro de cada ponto de 1 a 8 ao redor do personagem
+        for (ponto in Cal.PONTOS_CORPO) {
+            val px = ponto.first * larguraTela
+            val py = ponto.second * alturaTela
+            ToqueService.clicar(px, py, 30L)
+            SystemClock.sleep(60L)
+            ToqueService.clicar(px, py, 30L)
+            SystemClock.sleep(100L)
+        }
+
+        // Pequena pausa para as janelas de loot abrirem
+        SystemClock.sleep(250L)
+
+        // 3. Clica 4 vezes em cada janela de loot na ordem exata: 2, depois 3, depois 4
+        for (ponto in Cal.PONTOS_LOOT) {
+            val lx = ponto.first * larguraTela
+            val ly = ponto.second * alturaTela
+            repeat(4) {
+                ToqueService.clicar(lx, ly, 30L)
+                SystemClock.sleep(60L)
+            }
+            SystemClock.sleep(100L)
+        }
     }
 
     /** Uma leitura da tela. Retorna o estado para mostrar no painel. */
@@ -122,7 +173,19 @@ object Rota {
         // A cruz branca é o personagem. Sem ela não há minimapa na tela
         // (barra de notificações, menu aberto etc.): pausa sem mudar nada.
         val cruz = acharCruz(tela, x0, y0, x1, y1) ?: return "SEM CRUZ NO MINIMAPA (pausado)"
-        if (temMonstro(tela)) return "LUTA (pausado)"
+
+        if (temMonstro(tela)) {
+            estavaEmLuta = true
+            return "LUTA (pausado)"
+        }
+
+        // Se estava em luta e a janela de batalha ficou vazia, coleta o loot antes de andar
+        if (estavaEmLuta) {
+            estavaEmLuta = false
+            executarAutoloot(tela.width, tela.height)
+            ultimoClique = SystemClock.uptimeMillis()
+            return "AUTOLOOT concluído"
+        }
 
         val tamanho = modelos.size
         if (alvo >= tamanho) resetar()    // acabou a hunt: recomeça do primeiro
