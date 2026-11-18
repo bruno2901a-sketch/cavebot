@@ -78,7 +78,8 @@ class Modelo(val indice: Int, bmp: Bitmap) {
 object Rota {
     private var modelos: List<Modelo> = emptyList()
 
-    private var alvo = 0                  // posição atual dentro da lista de pinos
+    private var alvo = 0                  // índice atual na lista de pinos
+    private var direcaoIda = true         // true = indo do primeiro ao último; false = voltando do último ao primeiro
     private var ultimoClique = 0L
     private var confirmacoes = 0          // leituras seguidas perto do pino
     private var ultimaDist = -1f          // distância no último toque
@@ -86,6 +87,7 @@ object Rota {
     private var naoVisto = 0              // leituras seguidas sem achar o pino
     private var ultimaDistVista = -1f     // distância da última vez que o pino foi visto
     private var estavaEmLuta = false      // controla se havia monstro na leitura anterior
+    private var tentativaDesvio = 0       // contador para micro-desvios sutis ao redor do ícone
     @Volatile private var melhorScore = 0.0
 
     /** Carrega os ícones de [inicio] a [fim] já no tamanho certo para a largura da tela. */
@@ -112,6 +114,7 @@ object Rota {
 
     fun resetar() {
         alvo = 0
+        direcaoIda = true
         ultimoClique = 0L
         confirmacoes = 0
         ultimaDist = -1f
@@ -119,24 +122,44 @@ object Rota {
         naoVisto = 0
         ultimaDistVista = -1f
         estavaEmLuta = false
+        tentativaDesvio = 0
     }
 
     private fun proximoPino() {
-        alvo++
+        val tamanho = modelos.size
+        if (tamanho <= 0) return
+
+        if (direcaoIda) {
+            if (alvo < tamanho - 1) {
+                alvo++
+            } else {
+                // Chegou no último pino da ida: inverte a direção para voltar de trás para frente
+                direcaoIda = false
+                alvo = tamanho - 2.coerceAtLeast(0)
+            }
+        } else {
+            if (alvo > 0) {
+                alvo--
+            } else {
+                // Chegou de volta no primeiro pino: inverte a direção para ir novamente para frente
+                direcaoIda = true
+                alvo = 1.coerceAtMost(tamanho - 1)
+            }
+        }
+
         ultimoClique = 0L
         confirmacoes = 0
         ultimaDist = -1f
         semProgresso = 0
         naoVisto = 0
         ultimaDistVista = -1f
+        tentativaDesvio = 0
     }
 
     /** Executa a rotina completa de autoloot após o monstro morrer. */
     private fun executarAutoloot(larguraTela: Int, alturaTela: Int) {
-        // 1. Espera 1 segundo para o monstro cair e gerar o corpo no chão
         SystemClock.sleep(1000L)
 
-        // 2. Dá 2 cliques no centro de cada ponto de 1 a 8 ao redor do personagem
         for (ponto in Cal.PONTOS_CORPO) {
             val px = ponto.first * larguraTela
             val py = ponto.second * alturaTela
@@ -146,10 +169,8 @@ object Rota {
             SystemClock.sleep(100L)
         }
 
-        // Pequena pausa para as janelas de loot abrirem
         SystemClock.sleep(250L)
 
-        // 3. Clica 4 vezes em cada janela de loot na ordem exata: 1, 2, 3, 4 (com intervalo de 100 ms entre os cliques)
         for (ponto in Cal.PONTOS_LOOT) {
             val lx = ponto.first * larguraTela
             val ly = ponto.second * alturaTela
@@ -171,8 +192,6 @@ object Rota {
         val x1 = (tela.width * Cal.MINIMAPA_X1).toInt()
         val y1 = (tela.height * Cal.MINIMAPA_Y1).toInt()
 
-        // A cruz branca é o personagem. Sem ela não há minimapa na tela
-        // (barra de notificações, menu aberto etc.): pausa sem mudar nada.
         val cruz = acharCruz(tela, x0, y0, x1, y1) ?: return "SEM CRUZ NO MINIMAPA (pausado)"
 
         if (temMonstro(tela)) {
@@ -180,7 +199,6 @@ object Rota {
             return "LUTA (pausado)"
         }
 
-        // Se estava em luta e a janela de batalha ficou vazia, coleta o loot antes de andar
         if (estavaEmLuta) {
             estavaEmLuta = false
             executarAutoloot(tela.width, tela.height)
@@ -189,7 +207,7 @@ object Rota {
         }
 
         val tamanho = modelos.size
-        if (alvo >= tamanho) resetar()    // acabou a hunt: recomeça do primeiro
+        if (alvo < 0 || alvo >= tamanho) resetar()
         val modelo = modelos[alvo]
         val indice = modelo.indice
 
@@ -201,7 +219,6 @@ object Rota {
 
         if (achado == null) {
             naoVisto++
-            // ao chegar, o pino costuma sumir ou ficar escondido embaixo da cruz
             if (ultimaDistVista >= 0f && ultimaDistVista <= tela.width * Cal.CHEGOU_FRAC * 1.5f && naoVisto >= 3) {
                 proximoPino()
                 return "CHEGOU no pino $indice (pino sumiu do mapa)"
@@ -215,7 +232,6 @@ object Rota {
         ultimaDistVista = dist
 
         if (dist <= tela.width * Cal.CHEGOU_FRAC) {
-            // só dá por chegado depois de 2 leituras seguidas perto do pino
             confirmacoes++
             if (confirmacoes >= 2) {
                 proximoPino()
@@ -227,14 +243,42 @@ object Rota {
 
         val agora = SystemClock.uptimeMillis()
         if (agora - ultimoClique >= Cal.INTERVALO_CLIQUE) {
-            // se o toque anterior não deixou o pino mais perto, conta como sem avanço
-            if (ultimaDist >= 0f && dist >= ultimaDist - tela.width * 0.003f) semProgresso++ else semProgresso = 0
+            if (ultimaDist >= 0f && dist >= ultimaDist - tela.width * 0.003f) {
+                semProgresso++
+            } else {
+                semProgresso = 0
+                tentativaDesvio = 0
+            }
             ultimaDist = dist
-            tocar(achado.first.toFloat(), achado.second.toFloat())
+
+            // Micro-desvio extremamente sutil de apenas 2 pixels ao redor do ícone (anti-stuck de autoclick)
+            var alvoX = achado.first.toFloat()
+            var alvoY = achado.second.toFloat()
+
+            if (semProgresso >= 4) {
+                val desvioSutil = 2f // desvio de apenas 2 pixels para não sair de cima do ícone
+                when (tentativaDesvio % 4) {
+                    0 -> alvoX += desvioSutil // Leste
+                    1 -> alvoY -= desvioSutil // Norte
+                    2 -> alvoX -= desvioSutil // Oeste
+                    3 -> alvoY += desvioSutil // Sul
+                }
+                tentativaDesvio++
+                semProgresso = 2
+            }
+
+            tocar(alvoX, alvoY)
             ultimoClique = agora
         }
-        if (semProgresso >= 4) return "TRAVADO indo ao pino $indice (sem avanço $semProgresso) $acerto"
-        return "INDO ao pino $indice (${alvo + 1}/$tamanho) $acerto"
+
+        if (semProgresso >= 6) {
+            proximoPino()
+            return "PULANDO pino $indice (travado)"
+        }
+
+        val sentidoStr = if (direcaoIda) "IDA" else "VOLTA"
+        return if (tentativaDesvio > 0) "DESVIANDO pino $indice [$sentidoStr] $acerto" 
+               else "INDO ao pino $indice (${alvo + 1}/$tamanho) [$sentidoStr] $acerto"
     }
 
     /** Monstro na lista de batalha = barra de vida verde (faixa horizontal larga) dentro da lista. */
