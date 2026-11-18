@@ -287,11 +287,13 @@ object Rota {
             val g = (p shr 8) and 0xFF
             val b = p and 0xFF
             
+            // Fundo padrão azul-escuro vazio exato do otPokemon
             val ehFundoEscuro = (r <= 25 && g <= 30 && b >= 20 && b <= 50)
             
             if (!ehFundoEscuro) {
                 pixelsDiferentes++
-                if (pixelsDiferentes >= 45) return true
+                // Exige pelo menos 100 pixels diferentes para confirmar que há um monstro/player real
+                if (pixelsDiferentes >= 100) return true
             }
         }
         return false
