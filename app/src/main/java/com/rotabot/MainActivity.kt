@@ -11,6 +11,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -24,7 +25,6 @@ class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         RelatorioErro.instalar(this)
-        // Ao girar o celular a tela é recriada: guarda a autorização de captura.
         if (savedInstanceState != null) {
             resultadoCaptura = savedInstanceState.getInt("resultado", 0)
             dadosCaptura = savedInstanceState.getParcelable<Intent>("dados")
@@ -35,8 +35,8 @@ class MainActivity : Activity() {
             setPadding(36, 36, 36, 36)
         }
         val titulo = TextView(this).apply {
-            text = "RotaBot\n\n1. Permita a sobreposição.\n2. Ative o serviço de acessibilidade.\n3. Autorize a captura da tela.\n4. Escolha os marcadores inicial e final (1 a 20) e toque em Iniciar.\n\nNo jogo, deixe o celular deitado e o painel Batalha aberto, no lugar de sempre. Depois toque em Iniciar nos controles flutuantes."
-            textSize = 16f
+            text = "RotaBot\n\n1. Permita a sobreposição.\n2. Ative o serviço de acessibilidade.\n3. Autorize a captura da tela.\n4. Escolha os marcadores e opções abaixo.\n\nNo jogo, deixe o celular deitado e o painel Batalha aberto."
+            textSize = 15f
         }
         val inicio = EditText(this).apply {
             hint = "Marcador inicial (1 a 20)"
@@ -48,6 +48,19 @@ class MainActivity : Activity() {
             setText("5")
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
         }
+
+        // Checkbox para Ativar/Desativar Loot
+        val checkLoot = CheckBox(this).apply {
+            text = "Ativar Autoloot após matar monstro"
+            isChecked = false
+        }
+
+        // Checkbox para Ativar/Desativar Alerta de Player (> 15s em luta)
+        val checkAlerta = CheckBox(this).apply {
+            text = "Ativar Alerta Sonoro (Batalha > 15s / Player)"
+            isChecked = true
+        }
+
         val sobreposicao = Button(this).apply {
             text = "1) Permitir sobreposição"
             setOnClickListener {
@@ -73,7 +86,7 @@ class MainActivity : Activity() {
                 val a = inicio.text.toString().toIntOrNull()
                 val b = fim.text.toString().toIntOrNull()
                 if (a == null || b == null || a !in 1..20 || b !in 1..20 || a > b) {
-                    Toast.makeText(this@MainActivity, "Escolha marcadores entre 1 e 20. O inicial deve ser menor ou igual ao final.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@MainActivity, "Escolha marcadores entre 1 e 20 válidos.", Toast.LENGTH_LONG).show()
                     return@setOnClickListener
                 }
                 if (!Settings.canDrawOverlays(this@MainActivity)) {
@@ -95,17 +108,24 @@ class MainActivity : Activity() {
                     .putExtra(BotService.EXTRA_FIM, b)
                     .putExtra(BotService.EXTRA_RESULTADO, resultadoCaptura)
                     .putExtra(BotService.EXTRA_DADOS, dados)
+                    .putExtra(BotService.EXTRA_USA_LOOT, checkLoot.isChecked)
+                    .putExtra(BotService.EXTRA_USA_ALERTA, checkAlerta.isChecked)
+
                 if (Build.VERSION.SDK_INT >= 26) startForegroundService(serviceIntent) else startService(serviceIntent)
                 finish()
             }
         }
+
         tela.addView(titulo)
         tela.addView(inicio)
         tela.addView(fim)
+        tela.addView(checkLoot)
+        tela.addView(checkAlerta)
         tela.addView(sobreposicao)
         tela.addView(acessibilidade)
         tela.addView(captura)
         tela.addView(iniciar)
+
         val relatorio = Button(this).apply {
             text = "Ver relatório de erro"
             setOnClickListener {
@@ -127,7 +147,7 @@ class MainActivity : Activity() {
                         .setPositiveButton("Copiar tudo") { _, _ ->
                             val clipboard = getSystemService(CLIPBOARD_SERVICE) as ClipboardManager
                             clipboard.setPrimaryClip(ClipData.newPlainText("Relatório RotaBot", campo.text.toString()))
-                            Toast.makeText(this@MainActivity, "Relatório copiado. Cole no chat.", Toast.LENGTH_LONG).show()
+                            Toast.makeText(this@MainActivity, "Relatório copiado.", Toast.LENGTH_LONG).show()
                         }
                         .setNeutralButton("Limpar relatório") { _, _ -> RelatorioErro.limpar(this@MainActivity) }
                         .setNegativeButton("Fechar", null)
@@ -152,7 +172,7 @@ class MainActivity : Activity() {
             if (resultCode == RESULT_OK && data != null) {
                 resultadoCaptura = resultCode
                 dadosCaptura = data
-                Toast.makeText(this, "Captura autorizada. Agora toque em Iniciar.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Captura autorizada. Toque em Iniciar.", Toast.LENGTH_SHORT).show()
             } else {
                 dadosCaptura = null
                 Toast.makeText(this, "A captura é necessária para usar a rota.", Toast.LENGTH_LONG).show()
