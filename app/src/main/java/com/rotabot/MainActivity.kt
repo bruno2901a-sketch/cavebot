@@ -147,6 +147,18 @@ class MainActivity : Activity() {
         tela.addView(acessibilidade)
         tela.addView(captura)
         tela.addView(iniciar)
+
+        val exportarLog = Button(this).apply {
+            text = "Exportar log"
+            setOnClickListener { LogRota.exportarLog(this@MainActivity) }
+        }
+        val limparLog = Button(this).apply {
+            text = "Limpar log"
+            setOnClickListener { LogRota.limparLog(this@MainActivity) }
+        }
+        tela.addView(exportarLog)
+        tela.addView(limparLog)
+
         setContentView(tela)
     }
 
