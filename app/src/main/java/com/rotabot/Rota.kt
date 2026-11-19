@@ -379,8 +379,8 @@ object Rota {
         if (temRef) {
             val dxCruz = cruzRelX - ultimaCruzRel!!.first
             val dyCruz = cruzRelY - ultimaCruzRel!!.second
-            esperadoX = ultimoPinoVerdeRel!!.first - dxCruz
-            esperadoY = ultimoPinoVerdeRel!!.second - dyCruz
+            esperadoX = (ultimoPinoVerdeRel!!.first - dxCruz).toDouble()
+            esperadoY = (ultimoPinoVerdeRel!!.second - dyCruz).toDouble()
         } else {
             esperadoX = -1.0
             esperadoY = -1.0
