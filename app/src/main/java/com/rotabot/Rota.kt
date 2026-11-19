@@ -17,7 +17,7 @@ object Cal {
     const val BATALHA_Y1 = 0.392f
 
     const val CHEGOU_FRAC = 0.015f
-    const val LIMIAR = 0.78f
+    const val LIMIAR = 0.65f
     const val INTERVALO_CLIQUE = 1000L
     const val TOTAL_ICONES = 20
     const val LADO_ICONE = 26
@@ -151,17 +151,19 @@ object Rota {
         val tamanho = modelos.size
         if (tamanho <= 0) return
 
-        if (direcaoIda) {
+        if (tamanho == 1) {
+            alvo = 0
+        } else if (direcaoIda) {
             if (alvo < tamanho - 1) alvo++
             else {
                 direcaoIda = false
-                alvo = tamanho - 2.coerceAtLeast(0)
+                alvo = (tamanho - 2).coerceAtLeast(0)
             }
         } else {
             if (alvo > 0) alvo--
             else {
                 direcaoIda = true
-                alvo = 1.coerceAtMost(tamanho - 1)
+                alvo = 1
             }
         }
 
@@ -246,11 +248,19 @@ object Rota {
             // procura novamente o mesmo destino e pode clicar imediatamente.
             ultimoClique = 0L
             ultimaDist = -1f
+            ultimaDistVista = -1f
             semProgresso = 0
+            naoVisto = 0
             tentativaDesvio = 0
             confirmacoes = 0
             confirmacoesFallback = 0
-            return if (usaLoot) "AUTOLOOT concluído" else "MONSTRO MORREU (Retomando pino atual)"
+            ultimoPinoVerdeRel = null
+            quadrosDesdeDeteccao = 0
+            velocidadePinoX = 0f
+            velocidadePinoY = 0f
+            usandoFallbackVerde = false
+            cliquesNoPinoVerde = 0
+            return if (usaLoot) "AUTOLOOT concluído - procurando o mesmo pino" else "MONSTRO MORREU - procurando o mesmo pino"
         }
 
         val tamanho = modelos.size
@@ -459,10 +469,10 @@ object Rota {
 
         quadrosDesdeDeteccao++
         val ref = ultimoPinoVerdeRel
-        val temReferencia = ref != null
-        val quadrosPrevistos = quadrosDesdeDeteccao.coerceAtMost(4)
-        val previstoX = if (temReferencia) ref!!.first + (velocidadePinoX * quadrosPrevistos).toInt() else -1
-        val previstoY = if (temReferencia) ref!!.second + (velocidadePinoY * quadrosPrevistos).toInt() else -1
+        val rastreamentoValido = ref != null && quadrosDesdeDeteccao in 1..12
+        val quadrosPrevistos = if (rastreamentoValido) quadrosDesdeDeteccao else 0
+        val previstoX = if (rastreamentoValido) ref!!.first + (velocidadePinoX * quadrosPrevistos).toInt() else -1
+        val previstoY = if (rastreamentoValido) ref!!.second + (velocidadePinoY * quadrosPrevistos).toInt() else -1
         val raio = (maxOf(m.w, m.h) * 5).coerceAtLeast(45)
 
         var melhor = -2.0
@@ -472,7 +482,7 @@ object Rota {
         while (y <= rh - m.h) {
             var x = 0
             while (x <= rw - m.w) {
-                if (!temReferencia || Math.hypot((x + m.w / 2 - previstoX).toDouble(), (y + m.h / 2 - previstoY).toDouble()) <= raio) {
+                if (!rastreamentoValido || Math.hypot((x + m.w / 2 - previstoX).toDouble(), (y + m.h / 2 - previstoY).toDouble()) <= raio) {
                     val score = pontuar(g, ocultoPelaCruz, rw, x, y, m)
                     if (score > melhor) {
                         melhor = score
@@ -521,7 +531,7 @@ object Rota {
             usandoFallbackVerde = false
             val relPos = Pair(bx + m.w / 2, by + m.h / 2)
             val anterior = ultimoPinoVerdeRel
-            if (anterior != null) {
+            if (anterior != null && rastreamentoValido) {
                 val intervalo = quadrosDesdeDeteccao.coerceAtLeast(1)
                 val dx = relPos.first - anterior.first
                 val dy = relPos.second - anterior.second
@@ -546,7 +556,7 @@ object Rota {
         // a posição previamente reconhecida, compensando o deslocamento do minimapa.
         // Não procura "qualquer verde" no mapa: isso confundia o destino com outros pinos.
         val referencia = ultimoPinoVerdeRel
-        if (referencia != null && quadrosDesdeDeteccao in 1..4) {
+        if (referencia != null && quadrosDesdeDeteccao in 1..12) {
             val previstoX = referencia.first + (velocidadePinoX * quadrosDesdeDeteccao).toInt()
             val previstoY = referencia.second + (velocidadePinoY * quadrosDesdeDeteccao).toInt()
             if (previstoX in 0 until rw && previstoY in 0 until rh) {
@@ -556,6 +566,13 @@ object Rota {
             }
         }
 
+        if (ref != null && !rastreamentoValido) {
+            ultimoPinoVerdeRel = null
+            quadrosDesdeDeteccao = 0
+            velocidadePinoX = 0f
+            velocidadePinoY = 0f
+            cliquesNoPinoVerde = 0
+        }
         usandoFallbackVerde = false
         melhorScore = melhor.coerceAtLeast(0.0)
         return null
