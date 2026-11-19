@@ -471,7 +471,16 @@ object Rota {
         val px = IntArray(rw * rh)
         tela.getPixels(px, 0, rw, x0, y0, rw, rh)
         val g = DoubleArray(rw * rh)
-        for (i in px.indices) g[i] = cinza(px[i])
+        val ocultoPelaCruz = BooleanArray(rw * rh)
+        for (i in px.indices) {
+            g[i] = cinza(px[i])
+            val r = (px[i] shr 16) and 0xFF
+            val verde = (px[i] shr 8) and 0xFF
+            val b = px[i] and 0xFF
+            // A cruz/seta branca do jogador pode cobrir o centro do ícone.
+            // Esses pixels não devem participar da comparação do modelo.
+            ocultoPelaCruz[i] = r >= 190 && verde >= 190 && b >= 190
+        }
 
         // Depois do primeiro reconhecimento, procura o mesmo alvo na posição
         // prevista pelo deslocamento da cruz. Isso impede trocar para outro pino
@@ -491,7 +500,7 @@ object Rota {
             var x = 0
             while (x <= rw - m.w) {
                 if (!temReferencia || Math.hypot((x + m.w / 2 - previstoX).toDouble(), (y + m.h / 2 - previstoY).toDouble()) <= raio) {
-                    val score = pontuar(g, rw, x, y, m)
+                    val score = pontuar(g, ocultoPelaCruz, rw, x, y, m)
                     if (score > melhor) {
                         melhor = score
                         bx = x
@@ -509,7 +518,7 @@ object Rota {
                 val x = cx + dx
                 val yy = cy + dy
                 if (x < 0 || yy < 0 || x > rw - m.w || yy > rh - m.h) continue
-                val s = pontuar(g, rw, x, yy, m)
+                val s = pontuar(g, ocultoPelaCruz, rw, x, yy, m)
                 if (s > melhor) {
                     melhor = s
                     bx = x
@@ -526,7 +535,7 @@ object Rota {
             var melhorOutroModelo = -2.0
             for (outro in modelos) {
                 if (outro.indice == m.indice || outro.w != m.w || outro.h != m.h) continue
-                val scoreOutro = pontuar(g, rw, bx, by, outro)
+                val scoreOutro = pontuar(g, ocultoPelaCruz, rw, bx, by, outro)
                 if (scoreOutro > melhorOutroModelo) melhorOutroModelo = scoreOutro
             }
             val margemIdentidade = 0.035
@@ -567,24 +576,56 @@ object Rota {
         return null
     }
 
-    private fun pontuar(g: DoubleArray, rw: Int, x: Int, y: Int, m: Modelo): Double {
-        var sp = 0.0
-        var sq = 0.0
-        var sc = 0.0
-        var j = 0
+    private fun pontuar(
+        g: DoubleArray,
+        ocultoPelaCruz: BooleanArray,
+        rw: Int,
+        x: Int,
+        y: Int,
+        m: Modelo
+    ): Double {
+        // Correlação normalizada com máscara: ignora os pixels brancos da cruz
+        // que fica por cima do ícone quando o personagem chega ao destino.
+        var somaImagem = 0.0
+        var somaModelo = 0.0
+        var quantidade = 0
         for (yy in 0 until m.h) {
             val base = (y + yy) * rw + x
+            val baseModelo = yy * m.w
             for (xx in 0 until m.w) {
-                val v = g[base + xx]
-                sp += v
-                sq += v * v
-                sc += v * m.z[j]
-                j++
+                val pos = base + xx
+                if (ocultoPelaCruz[pos]) continue
+                somaImagem += g[pos]
+                somaModelo += m.z[baseModelo + xx]
+                quantidade++
             }
         }
-        val n = (m.w * m.h).toDouble()
-        val variancia = sq - sp * sp / n
-        if (variancia < 50.0) return -1.0
-        return sc / (Math.sqrt(variancia) * m.norma)
+
+        val total = m.w * m.h
+        // Se a cruz cobrir grande parte do marcador, não há informação suficiente.
+        if (quantidade < total * 0.55) return -1.0
+
+        val mediaImagem = somaImagem / quantidade
+        val mediaModelo = somaModelo / quantidade
+        var covariancia = 0.0
+        var varianciaImagem = 0.0
+        var varianciaModelo = 0.0
+
+        for (yy in 0 until m.h) {
+            val base = (y + yy) * rw + x
+            val baseModelo = yy * m.w
+            for (xx in 0 until m.w) {
+                val pos = base + xx
+                if (ocultoPelaCruz[pos]) continue
+                val a = g[pos] - mediaImagem
+                val b = m.z[baseModelo + xx] - mediaModelo
+                covariancia += a * b
+                varianciaImagem += a * a
+                varianciaModelo += b * b
+            }
+        }
+
+        if (varianciaImagem < 50.0 || varianciaModelo < 50.0) return -1.0
+        return covariancia / (Math.sqrt(varianciaImagem) * Math.sqrt(varianciaModelo))
     }
 }
