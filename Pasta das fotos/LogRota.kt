@@ -72,7 +72,7 @@ object LogRota {
 
     private fun normalizarAssinatura(msg: String): String {
         return msg
-            .replace(Regex("acerto=\\d+[.,]\d+"), "acerto=#")
+            .replace(Regex("acerto=\\d+[.,]\\d+"), "acerto=#")
             .replace(Regex("dist=(\\d+[.,]\\d+px|N/A)"), "dist=#")
             .replace(Regex("verde=-?\\d+"), "verde=#")
             .replace(Regex("rgb\\(\\d+,\\d+,\\d+\\)"), "rgb(#,#,#)")
