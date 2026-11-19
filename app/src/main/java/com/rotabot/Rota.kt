@@ -155,6 +155,7 @@ object Rota {
 
         ultimoClique = 0L
         confirmacoes = 0
+        confirmacoesFallback = 0
         ultimaDist = -1f
         semProgresso = 0
         naoVisto = 0
