@@ -162,6 +162,7 @@ object Rota {
     private var ultimoQtdVerde = 0
     private var ultimoRgbVerde: Triple<Int, Int, Int>? = null
     private var vistoVerde = false
+    private var indiceCliqueVariavel = 0
 
     @Volatile
     private var melhorScore = 0.0
@@ -567,6 +568,15 @@ object Rota {
             naoVisto = 0
 
             if (veioDeCaminhando && refVerde != null) {
+                if (buscarComponentesVerdes(tela, x0, y0, x1, y1).isEmpty()) {
+                    fase = FaseNavegacao.ESCOLHER
+                    retomarVerdeAte = 0L
+                    verdeVeioDeTemplate = false
+                    ultimoVerdeRel = null
+                    vistoVerde = false
+                    falhasPino = 0
+                    return if (usaLoot) "AUTOLOOT concluído - sem verde apos luta - ESCOLHER" else "MONSTRO MORREU - sem verde apos luta - ESCOLHER"
+                }
                 fase = FaseNavegacao.CAMINHANDO
                 ultimoVerdeRel = refVerde
                 retomarVerdeAte = agora + 2000L
@@ -686,14 +696,21 @@ object Rota {
                 var logClique: String? = null
 
                 if (agora - ultimoClique >= Cal.INTERVALO_CLIQUE) {
-                    if (ultimaDist >= 0f && dist >= ultimaDist - tela.width * 0.003f) {
-                        semProgresso++
-                    } else {
+                    val anteriorDist = ultimaDist
+                    if (anteriorDist >= 0f && dist >= anteriorDist - tela.width * 0.003f) semProgresso++ else {
                         semProgresso = 0
+                        indiceCliqueVariavel = 0
                     }
                     ultimaDist = dist
-
-                    val toque = dispararToqueSeguro(tela.width, tela.height, absX, absY, tocar)
+                    if (semProgresso >= 3 && anteriorDist >= 0f && abs(dist - anteriorDist) < 3f && dist <= toleranciaChegada * 2f) {
+                        proximoPino(agora)
+                        return formatarLog("CHEGOU", indice, melhorScore, qtdVerde, rgbVerde, dist, semProgresso, "chegada por parada")
+                    }
+                    val offsets = arrayOf(Pair(8f,0f),Pair(-8f,0f),Pair(0f,8f),Pair(0f,-8f),Pair(10f,6f),Pair(-10f,-6f),Pair(6f,-10f),Pair(-6f,10f))
+                    val off = if (semProgresso >= 2) offsets[indiceCliqueVariavel++ % offsets.size] else Pair(0f,0f)
+                    val px = (absX + off.first).coerceIn(x0 + 15f, x1 - 15f)
+                    val py = (absY + off.second).coerceIn(y0 + 15f, y1 - 15f)
+                    val toque = dispararToqueSeguro(tela.width, tela.height, px, py, tocar)
                     ultimoClique = agora
                     cliquesVerde++
                     logClique = "CLIQUE ${toque.first.toInt()},${toque.second.toInt()}"
@@ -715,10 +732,13 @@ object Rota {
             } else {
                 if (retomarVerdeAte > 0L && agora > retomarVerdeAte) {
                     retomarVerdeAte = 0L
-                    return registrarFalhaPino(
-                        agora, fase.name, indice, melhorScore, 0, ultimoRgbVerde,
-                        ultimaDistVerde, semProgresso, "sem verde apos luta - ESCOLHER"
-                    )
+                    fase = FaseNavegacao.ESCOLHER
+                    ultimoVerdeRel = null
+                    vistoVerde = false
+                    semProgresso = 0
+                    ultimaDist = -1f
+                    falhasPino = 0
+                    return formatarLog(fase.name, indice, melhorScore, 0, ultimoRgbVerde, ultimaDistVerde, 0, "sem verde apos luta - ESCOLHER sem penalidade")
                 }
 
                 ultimoQtdVerde = 0
@@ -760,6 +780,23 @@ object Rota {
             }
         }
 
+        val verdes = buscarComponentesVerdes(tela, x0, y0, x1, y1)
+        if (verdes.isNotEmpty()) {
+            val posicoes = verdes.joinToString("; ") { "${x0 + it.posicao.first},${y0 + it.posicao.second}" }
+            val verde = verdes.maxByOrNull { it.quantidade }!!
+            val distVerde = hypot(((x0 + verde.posicao.first) - cx).toDouble(), ((y0 + verde.posicao.second) - cy).toDouble()).toFloat()
+            if (distVerde > toleranciaChegada && agora - ultimoClique >= Cal.INTERVALO_CLIQUE) {
+                val toque = dispararToqueSeguro(tela.width, tela.height, (x0 + verde.posicao.first).toFloat(), (y0 + verde.posicao.second).toFloat(), tocar)
+                ultimoClique = agora
+                iniciarCaminhada(verde.posicao, distVerde, agora, veioDeTemplate = false)
+                vistoVerde = true
+                ultimoQtdVerde = verde.quantidade
+                ultimoRgbVerde = verde.rgbMedio
+                val info = if (verdes.size > 1) "verdes=${verdes.size} posicoes=[$posicoes]" else "pino verde global"
+                return formatarLog(fase.name, indice, melhorScore, verde.quantidade, verde.rgbMedio, distVerde, semProgresso, "$info | CLIQUE ${toque.first.toInt()},${toque.second.toInt()}")
+            }
+            if (verdes.size > 1) LogRota.registrarPasso(context, "ESCOLHER: ${verdes.size} pinos verdes: $posicoes", tela)
+        }
         val achado = acharPorTemplate(tela, x0, y0, x1, y1, modelo, cx, cy)
         val scoreAtual = melhorScore
 
@@ -870,6 +907,43 @@ object Rota {
         return formatarLog(
             fase.name, indice, scoreAtual, 0, ultimoRgbVerde, dist, semProgresso, extra
         )
+    }
+
+    private fun regiaoQuasePreta(pixels: IntArray, largura: Int, x: Int, y: Int, w: Int, h: Int): Boolean {
+        var pretos = 0
+        val total = w * h
+        for (dy in 0 until h) for (dx in 0 until w) {
+            val p = pixels[(y + dy) * largura + x + dx]
+            if (((p shr 16) and 255) < 18 && ((p shr 8) and 255) < 18 && (p and 255) < 18) pretos++
+        }
+        return pretos >= total * 0.85
+    }
+
+    private fun buscarComponentesVerdes(tela: Bitmap, x0: Int, y0: Int, x1: Int, y1: Int): List<DeteccaoVerde> {
+        val w = x1 - x0; val h = y1 - y0
+        if (w <= 0 || h <= 0) return emptyList()
+        val px = IntArray(w * h)
+        tela.getPixels(px, 0, w, x0, y0, w, h)
+        val mask = BooleanArray(px.size) { ehVerdePinoAtivo(px[it]) }
+        val seen = BooleanArray(px.size); val queue = IntArray(px.size)
+        val out = ArrayList<DeteccaoVerde>()
+        val dx = intArrayOf(-1,1,0,0); val dy = intArrayOf(0,0,-1,1)
+        for (start in px.indices) {
+            if (!mask[start] || seen[start]) continue
+            var head=0; var tail=0; queue[tail++]=start; seen[start]=true
+            var sx=0L; var sy=0L; var sr=0L; var sg=0L; var sb=0L; var n=0
+            while(head<tail) {
+                val at=queue[head++]; val yy=at/w; val xx=at%w; val p=px[at]
+                sx+=xx; sy+=yy; sr+=((p shr 16) and 255); sg+=((p shr 8) and 255); sb+=(p and 255); n++
+                for(d in 0..3) { val nx=xx+dx[d]; val ny=yy+dy[d]
+                    if(nx in 0 until w && ny in 0 until h) { val ni=ny*w+nx
+                        if(mask[ni] && !seen[ni]) { seen[ni]=true; queue[tail++]=ni }
+                    }
+                }
+            }
+            if(n>=4) out.add(DeteccaoVerde(Pair((sx/n).toInt(),(sy/n).toInt()),n,Triple((sr/n).toInt(),(sg/n).toInt(),(sb/n).toInt())))
+        }
+        return out
     }
 
     private fun acharPinoVerdeProximo(
@@ -1251,7 +1325,7 @@ object Rota {
         while (y <= rh - m.h) {
             var x = 0
             while (x <= rw - m.w) {
-                val score = pontuar(g, ocultoPelaCruz, rw, x, y, m)
+                val score = if (regiaoQuasePreta(px, rw, x, y, m.w, m.h)) -1.0 else pontuar(g, ocultoPelaCruz, rw, x, y, m)
                 if (score > melhor) {
                     melhor = score
                     bx = x
@@ -1277,7 +1351,7 @@ object Rota {
                     yy > rh - m.h
                 ) continue
 
-                val s = pontuar(g, ocultoPelaCruz, rw, x, yy, m)
+                val s = if (regiaoQuasePreta(px, rw, x, yy, m.w, m.h)) -1.0 else pontuar(g, ocultoPelaCruz, rw, x, yy, m)
                 if (s > melhor) {
                     melhor = s
                     bx = x
