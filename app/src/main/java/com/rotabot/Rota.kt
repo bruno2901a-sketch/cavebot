@@ -50,21 +50,33 @@ class Modelo(val indice: Int, bmp: Bitmap) {
     val w = bmp.width
     val h = bmp.height
     val z = DoubleArray(w * h)
+    val valida = BooleanArray(w * h)
+    val pixelsValidos: Int
     val norma: Double
 
     init {
         val px = IntArray(w * h)
         bmp.getPixels(px, 0, w, 0, 0, w, h)
         var soma = 0.0
+        var quantidade = 0
         for (i in px.indices) {
-            z[i] = cinza(px[i])
-            soma += z[i]
+            val alpha = (px[i] ushr 24) and 0xFF
+            // Pixels transparentes do PNG não fazem parte do desenho do pino.
+            valida[i] = alpha >= 32
+            if (valida[i]) {
+                z[i] = cinza(px[i])
+                soma += z[i]
+                quantidade++
+            }
         }
-        val media = soma / z.size
+        pixelsValidos = quantidade
+        val media = if (quantidade > 0) soma / quantidade else 0.0
         var q = 0.0
         for (i in z.indices) {
-            z[i] -= media
-            q += z[i] * z[i]
+            if (valida[i]) {
+                z[i] -= media
+                q += z[i] * z[i]
+            }
         }
         norma = Math.sqrt(q)
     }
@@ -411,7 +423,7 @@ object Rota {
     ): Pair<Int, Int>? {
         val rw = x1 - x0
         val rh = y1 - y0
-        if (rw < m.w || rh < m.h || m.norma < 1e-3) {
+        if (rw < m.w || rh < m.h || m.norma < 1e-3 || m.pixelsValidos < 8) {
             melhorScore = 0.0
             return null
         }
@@ -567,15 +579,16 @@ object Rota {
             val baseModelo = yy * m.w
             for (xx in 0 until m.w) {
                 val pos = base + xx
-                if (ocultoPelaCruz[pos]) continue
+                val indiceModelo = baseModelo + xx
+                if (ocultoPelaCruz[pos] || !m.valida[indiceModelo]) continue
                 somaImagem += g[pos]
-                somaModelo += m.z[baseModelo + xx]
+                somaModelo += m.z[indiceModelo]
                 quantidade++
             }
         }
 
-        val total = m.w * m.h
-        // Se a cruz cobrir grande parte do marcador, não há informação suficiente.
+        val total = m.pixelsValidos
+        // Compara apenas pixels realmente desenhados no PNG e ainda visíveis na tela.
         if (quantidade < total * 0.55) return -1.0
 
         val mediaImagem = somaImagem / quantidade
@@ -589,9 +602,10 @@ object Rota {
             val baseModelo = yy * m.w
             for (xx in 0 until m.w) {
                 val pos = base + xx
-                if (ocultoPelaCruz[pos]) continue
+                val indiceModelo = baseModelo + xx
+                if (ocultoPelaCruz[pos] || !m.valida[indiceModelo]) continue
                 val a = g[pos] - mediaImagem
-                val b = m.z[baseModelo + xx] - mediaModelo
+                val b = m.z[indiceModelo] - mediaModelo
                 covariancia += a * b
                 varianciaImagem += a * a
                 varianciaModelo += b * b
