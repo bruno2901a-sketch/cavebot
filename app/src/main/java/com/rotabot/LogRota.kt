@@ -72,11 +72,11 @@ object LogRota {
 
     private fun normalizarAssinatura(msg: String): String {
         return msg
-            .replace(Regex("acerto=\d+[.,]\d+"), "acerto=#")
-            .replace(Regex("dist=(\d+[.,]\d+px|N/A)"), "dist=#")
-            .replace(Regex("verde=-?\d+"), "verde=#")
-            .replace(Regex("rgb\(\d+,\d+,\d+\)"), "rgb(#,#,#)")
-            .replace(Regex("CLIQUE \d+,\d+"), "CLIQUE #,#")
+            .replace(Regex("acerto=\\d+[.,]\\d+"), "acerto=#")
+            .replace(Regex("dist=(\\d+[.,]\\d+px|N/A)"), "dist=#")
+            .replace(Regex("verde=-?\\d+"), "verde=#")
+            .replace(Regex("rgb\\(\\d+,\\d+,\\d+\\)"), "rgb(#,#,#)")
+            .replace(Regex("CLIQUE \\d+,\\d+"), "CLIQUE #,#")
     }
 
     private fun ehEventoObrigatorio(msg: String): Boolean {
@@ -168,8 +168,7 @@ object LogRota {
                 }
 
                 val sufixoImg = if (nomeImagemSalva != null) " | img=$nomeImagemSalva" else ""
-                val linha = "[$timestampHora] $mensagem$sufixoImg
-"
+                val linha = "[$timestampHora] $mensagem$sufixoImg\n"
                 FileOutputStream(arquivo, true).use { out ->
                     out.write(linha.toByteArray(Charsets.UTF_8))
                     out.flush()
