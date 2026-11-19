@@ -237,11 +237,7 @@ object Rota {
 
         if (achado == null) {
             naoVisto++
-            if (ultimaDistVista >= 0f && ultimaDistVista <= tela.width * Cal.CHEGOU_FRAC * 1.5f && naoVisto >= 3) {
-                proximoPino()
-                return "CHEGOU no pino $indice (pino sumiu)"
-            }
-            if (naoVisto >= 30) return "PINO $indice FORA DO MINIMAPA? $acerto"
+            if (naoVisto >= 30) return "PINO $indice NÃO LOCALIZADO - aguardando $acerto"
             return "PROCURANDO pino $indice (${alvo + 1}/$tamanho) $acerto"
         }
         naoVisto = 0
@@ -292,10 +288,11 @@ object Rota {
             }
         }
 
-        val limiteSemProgresso = if (usandoFallbackVerde) 9 else 6
-        if (semProgresso >= limiteSemProgresso || cliquesNoPinoVerde >= 12) {
-            proximoPino()
-            return "PULANDO pino $indice (travado)"
+        if (semProgresso >= 6 || cliquesNoPinoVerde >= 12) {
+            // Nunca pula automaticamente: um destino errado pode fazer a rota inteira se perder.
+            semProgresso = 0
+            cliquesNoPinoVerde = 0
+            return "SEM PROGRESSO no pino $indice - aguardando nova leitura"
         }
 
         val sentidoStr = if (direcaoIda) "IDA" else "VOLTA"
@@ -503,15 +500,27 @@ object Rota {
             return Pair(x0 + relPos.first, y0 + relPos.second)
         }
 
-        val verdePos = acharBlocoPinoVerde(px, rw, rh, m.w, m.h, cruzRelX, cruzRelY)
-        if (verdePos != null) {
-            usandoFallbackVerde = true
-            ultimoPinoVerdeRel = verdePos
-            ultimaCruzRel = Pair(cruzRelX, cruzRelY)
-            return Pair(x0 + verdePos.first, y0 + verdePos.second)
+        // Se o marcador mudou de cor/estado após o clique, acompanha somente
+        // a posição previamente reconhecida, compensando o deslocamento do minimapa.
+        // Não procura "qualquer verde" no mapa: isso confundia o destino com outros pinos.
+        val referencia = ultimoPinoVerdeRel
+        val cruzAnterior = ultimaCruzRel
+        if (referencia != null && cruzAnterior != null) {
+            val dx = cruzRelX - cruzAnterior.first
+            val dy = cruzRelY - cruzAnterior.second
+            val previstoX = (referencia.first - dx).toInt()
+            val previstoY = (referencia.second - dy).toInt()
+            if (previstoX in 0 until rw && previstoY in 0 until rh) {
+                usandoFallbackVerde = true
+                ultimoPinoVerdeRel = Pair(previstoX, previstoY)
+                ultimaCruzRel = Pair(cruzRelX, cruzRelY)
+                melhorScore = 0.0
+                return Pair(x0 + previstoX, y0 + previstoY)
+            }
         }
 
         usandoFallbackVerde = false
+        melhorScore = 0.0
         return null
     }
 
