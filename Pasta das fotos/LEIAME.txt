@@ -1,0 +1,23 @@
+(a) Problema original do bot:
+- Trava em ESCOLHER quando o pino esta proximo da cruz do minimapa, com score abaixo do limiar ou sem deteccao consistente.
+- Ciclos de "sem progresso - reescolhendo" ao caminhar ate o pino verde ou quando o pino nao avanca dentro do limite de tentativas/cliques.
+- Falsos positivos ou tratamento travado em "nao ha rota" ("Não há rota").
+- Chegada nao detectada quando o pino verde some ou entra sob a cruz do minimapa antes de completar os quadros de chegada.
+
+(b) O que mudou no Rota.kt:
+- Adicionado contador quadrosPertoDaCruz (zerado em resetar(), iniciarCaminhada() e proximoPino()); quando o template acha o pino com dist <= toleranciaChegada por 3 quadros seguidos na fase ESCOLHER, chama proximoPino(agora) e retorna CHEGOU.
+- Adicionada deteccao de pino verde ativo (ehVerdePinoAtivo, DeteccaoVerde, buscarMaiorComponenteVerdeNaJanela, acharPinoVerdeLocal, acharPinoVerdeJanelaTripla e acharPinoVerdeProximo) com acompanhamento de distancia, menor distancia e quadros sem verde.
+- Adicionado tratamento de "sob a cruz" e "chegando" na fase CAMINHANDO, alem de reescolha quando o verde aparece sem ter vindo de template.
+- Adicionados fallbacks na fase ESCOLHER (candidatoConsistente / quadrosQuaseLimiar e validacao por pino verde proximo ao candidato) e limite de falhas consecutivas por pino (MAX_FALHAS_PINO / registrarFalhaPino).
+- Adicionada deteccao de "nao ha rota" (temSemRota) com debounce e janela de ignorar, alem de controle de estado de luta, retomada do pino verde pos-luta e chamada a LogRota.registrarPasso(context, texto, tela) ao final de passo().
+
+(c) O que o LogRota.kt faz e onde ficam o log e as imagens:
+- Grava logs persistentes deduplicados por assinatura normalizada (com eventos obrigatorios sempre registrados), rotacionando o arquivo ao atingir 2 MB (rotabot_log_antigo.txt).
+- Salva capturas JPEG de falha (ate 30 imagens em falhas/) quando ocorrem motivos de falha e anexa o nome do arquivo na linha do log.
+- Exporta o log e ate 10 imagens recentes via FileProvider (ACTION_SEND / ACTION_SEND_MULTIPLE) e limpa log, backup e imagens.
+- Caminho base: Android/data/<packageName>/files/RotaBot/ (arquivo de log: rotabot_log.txt; imagens de falha: falhas/).
+
+(d) O que o dev precisa fazer no app real:
+- Chamar LogRota.init(context) ao iniciar o servico.
+- Chamar Rota.passo() como ja faz hoje (o passo() agora grava o log sozinho).
+- Criar os botoes Exportar log e Limpar log chamando LogRota.exportarLog(context) e LogRota.limparLog(context).
