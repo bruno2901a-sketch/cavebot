@@ -11,14 +11,13 @@ object Cal {
     const val MINIMAPA_X1 = 0.996f
     const val MINIMAPA_Y1 = 0.615f
 
-    // Coordenadas ajustadas exatamente para o quadrado vermelho (espaço interno dos pokémons na lista de batalha)
     const val BATALHA_X0 = 0.045f
     const val BATALHA_Y0 = 0.203f
     const val BATALHA_X1 = 0.181f
     const val BATALHA_Y1 = 0.392f
 
     const val CHEGOU_FRAC = 0.015f
-    const val LIMIAR = 0.90f
+    const val LIMIAR = 0.78f
     const val INTERVALO_CLIQUE = 1500L
     const val TOTAL_ICONES = 20
     const val LADO_ICONE = 26
@@ -38,6 +37,14 @@ object Cal {
 
 private fun cinza(p: Int): Double =
     ((p shr 16) and 0xFF) * 0.299 + ((p shr 8) and 0xFF) * 0.587 + (p and 0xFF) * 0.114
+
+// Verde puro do corpo do pino ativo (R e B baixos, G forte), evitando tons amarelados/limao do terreno
+private fun ehVerdePinoAtivo(p: Int): Boolean {
+    val r = (p shr 16) and 0xFF
+    val g = (p shr 8) and 0xFF
+    val b = p and 0xFF
+    return g >= 150 && r < 55 && b < 55
+}
 
 class Modelo(val indice: Int, bmp: Bitmap) {
     val w = bmp.width
@@ -76,6 +83,10 @@ object Rota {
     private var estavaEmLuta = false
     private var tentativaDesvio = 0
     private var tempoInicioLuta = 0L
+    private var ultimoPinoVerdeRel: Pair<Int, Int>? = null
+    private var ultimaCruzRel: Pair<Float, Float>? = null
+    private var usandoFallbackVerde = false
+    private var cliquesNoPinoVerde = 0
     @Volatile private var melhorScore = 0.0
 
     fun carregar(ctx: Context, inicio: Int, fim: Int, larguraTela: Int) {
@@ -110,6 +121,10 @@ object Rota {
         estavaEmLuta = false
         tentativaDesvio = 0
         tempoInicioLuta = 0L
+        ultimoPinoVerdeRel = null
+        ultimaCruzRel = null
+        usandoFallbackVerde = false
+        cliquesNoPinoVerde = 0
         BotService.pararAlarme()
     }
 
@@ -138,6 +153,10 @@ object Rota {
         naoVisto = 0
         ultimaDistVista = -1f
         tentativaDesvio = 0
+        ultimoPinoVerdeRel = null
+        ultimaCruzRel = null
+        usandoFallbackVerde = false
+        cliquesNoPinoVerde = 0
     }
 
     private fun executarAutoloot(larguraTela: Int, alturaTela: Int) {
@@ -162,14 +181,22 @@ object Rota {
         }
     }
 
-    fun passo(tela: Bitmap, context: Context, usaLoot: Boolean, usaAlerta: Boolean, uriSom: String, volume: Int, tocar: (Float, Float) -> Unit): String {
+    fun passo(
+        tela: Bitmap,
+        context: Context,
+        usaLoot: Boolean,
+        usaAlerta: Boolean,
+        uriSom: String,
+        volume: Int,
+        tocar: (Float, Float) -> Unit
+    ): String {
         if (tela.height > tela.width) return "CELULAR EM RETRATO (pausado)"
         if (modelos.isEmpty()) return "SEM ÍCONES CARREGADOS"
 
-        val x0 = (tela.width * Cal.MINIMAPA_X0).toInt()
-        val y0 = (tela.height * Cal.MINIMAPA_Y0).toInt()
-        val x1 = (tela.width * Cal.MINIMAPA_X1).toInt()
-        val y1 = (tela.height * Cal.MINIMAPA_Y1).toInt()
+        val x0 = (tela.width * Cal.MINIMAPA_X0).toInt().coerceIn(0, tela.width - 1)
+        val y0 = (tela.height * Cal.MINIMAPA_Y0).toInt().coerceIn(0, tela.height - 1)
+        val x1 = (tela.width * Cal.MINIMAPA_X1).toInt().coerceIn(x0 + 1, tela.width)
+        val y1 = (tela.height * Cal.MINIMAPA_Y1).toInt().coerceIn(y0 + 1, tela.height)
 
         val cruz = acharCruz(tela, x0, y0, x1, y1) ?: return "SEM CRUZ NO MINIMAPA (pausado)"
 
@@ -205,7 +232,7 @@ object Rota {
         val cx = cruz.first.toFloat()
         val cy = cruz.second.toFloat()
 
-        val achado = achar(tela, x0, y0, x1, y1, modelo)
+        val achado = achar(tela, x0, y0, x1, y1, modelo, cx, cy)
         val acerto = "acerto=" + "%.2f".format(melhorScore)
 
         if (achado == null) {
@@ -222,7 +249,8 @@ object Rota {
         val dist = Math.hypot((achado.first - cx).toDouble(), (achado.second - cy).toDouble()).toFloat()
         ultimaDistVista = dist
 
-        if (dist <= tela.width * Cal.CHEGOU_FRAC) {
+        val toleranciaChegada = if (usandoFallbackVerde) tela.width * Cal.CHEGOU_FRAC * 1.35f else tela.width * Cal.CHEGOU_FRAC
+        if (dist <= toleranciaChegada) {
             confirmacoes++
             if (confirmacoes >= 2) {
                 proximoPino()
@@ -245,7 +273,7 @@ object Rota {
             var alvoX = achado.first.toFloat()
             var alvoY = achado.second.toFloat()
 
-            if (semProgresso >= 4) {
+            if (semProgresso >= 4 && !usandoFallbackVerde) {
                 val desvioAjustado = 6f
                 when (tentativaDesvio % 4) {
                     0 -> alvoX += desvioAjustado
@@ -259,42 +287,43 @@ object Rota {
 
             tocar(alvoX, alvoY)
             ultimoClique = agora
+            if (usandoFallbackVerde) {
+                cliquesNoPinoVerde++
+            }
         }
 
-        if (semProgresso >= 6) {
+        val limiteSemProgresso = if (usandoFallbackVerde) 9 else 6
+        if (semProgresso >= limiteSemProgresso || cliquesNoPinoVerde >= 12) {
             proximoPino()
             return "PULANDO pino $indice (travado)"
         }
 
         val sentidoStr = if (direcaoIda) "IDA" else "VOLTA"
-        return if (tentativaDesvio > 0) "DESVIANDO pino $indice [$sentidoStr] $acerto" 
+        return if (tentativaDesvio > 0) "DESVIANDO pino $indice [$sentidoStr] $acerto"
                else "INDO ao pino $indice (${alvo + 1}/$tamanho) [$sentidoStr] $acerto"
     }
 
     fun temMonstro(tela: Bitmap): Boolean {
-        val x0 = (tela.width * Cal.BATALHA_X0).toInt()
-        val y0 = (tela.height * Cal.BATALHA_Y0).toInt()
-        val x1 = (tela.width * Cal.BATALHA_X1).toInt()
-        val y1 = (tela.height * Cal.BATALHA_Y1).toInt()
+        val x0 = (tela.width * Cal.BATALHA_X0).toInt().coerceIn(0, tela.width - 1)
+        val y0 = (tela.height * Cal.BATALHA_Y0).toInt().coerceIn(0, tela.height - 1)
+        val x1 = (tela.width * Cal.BATALHA_X1).toInt().coerceIn(x0 + 1, tela.width)
+        val y1 = (tela.height * Cal.BATALHA_Y1).toInt().coerceIn(y0 + 1, tela.height)
         val rw = x1 - x0
         val rh = y1 - y0
         if (rw <= 0 || rh <= 0) return false
         val px = IntArray(rw * rh)
         tela.getPixels(px, 0, rw, x0, y0, rw, rh)
-        
+
         var pixelsDiferentes = 0
         for (p in px) {
             val r = (p shr 16) and 0xFF
             val g = (p shr 8) and 0xFF
             val b = p and 0xFF
-            
-            // Fundo padrão azul-escuro exato (RGB 11, 16, 35)
+
             val ehFundoEscuro = (r <= 25 && g <= 30 && b >= 20 && b <= 50)
-            
             if (!ehFundoEscuro) {
                 pixelsDiferentes++
-                // Exige pelo menos 100 pixels diferentes estritamente dentro do quadrado vermelho
-                if (pixelsDiferentes >= 100) return true
+                if (pixelsDiferentes >= 120) return true
             }
         }
         return false
@@ -335,13 +364,97 @@ object Rota {
         return if (melhor >= 62) Pair(x0 + bx + 1, y0 + by + 1) else null
     }
 
-    private fun achar(tela: Bitmap, x0: Int, y0: Int, x1: Int, y1: Int, m: Modelo): Pair<Int, Int>? {
+    private fun acharBlocoPinoVerde(
+        px: IntArray,
+        rw: Int,
+        rh: Int,
+        mw: Int,
+        mh: Int,
+        cruzRelX: Float,
+        cruzRelY: Float
+    ): Pair<Int, Int>? {
+        val esperadoX: Double
+        val esperadoY: Double
+        val temRef = ultimoPinoVerdeRel != null && ultimaCruzRel != null
+        if (temRef) {
+            val dxCruz = cruzRelX - ultimaCruzRel!!.first
+            val dyCruz = cruzRelY - ultimaCruzRel!!.second
+            esperadoX = ultimoPinoVerdeRel!!.first - dxCruz
+            esperadoY = ultimoPinoVerdeRel!!.second - dyCruz
+        } else {
+            esperadoX = -1.0
+            esperadoY = -1.0
+        }
+
+        val raioBusca = Math.max(mw, mh) * 3.0
+        var melhorScoreVerde = -1.0
+        var melhorContagem = 0
+        var bx = -1
+        var by = -1
+
+        var y = 0
+        while (y <= rh - mh) {
+            var x = 0
+            while (x <= rw - mw) {
+                var verde = 0
+                for (yy in 0 until mh) {
+                    val base = (y + yy) * rw + x
+                    for (xx in 0 until mw) {
+                        if (ehVerdePinoAtivo(px[base + xx])) verde++
+                    }
+                }
+                if (verde >= 25) {
+                    val cx = x + mw / 2
+                    val cy = y + mh / 2
+                    var score = verde.toDouble()
+                    if (temRef) {
+                        val distEsperado = Math.hypot(cx - esperadoX, cy - esperadoY)
+                        if (distEsperado > raioBusca) {
+                            score *= 0.25
+                        } else {
+                            score += (1.0 - distEsperado / raioBusca) * 40.0
+                        }
+                    }
+                    if (score > melhorScoreVerde) {
+                        melhorScoreVerde = score
+                        melhorContagem = verde
+                        bx = cx
+                        by = cy
+                    }
+                }
+                x += 2
+            }
+            y += 2
+        }
+
+        if (bx >= 0 && by >= 0) {
+            val area = (mw * mh).coerceAtLeast(1)
+            val frac = (melhorContagem.toDouble() / area.toDouble()).coerceIn(0.0, 1.0)
+            melhorScore = (0.78 + frac * 0.17).coerceIn(0.78, 0.95)
+            return Pair(bx, by)
+        }
+        return null
+    }
+
+    private fun achar(
+        tela: Bitmap,
+        x0: Int,
+        y0: Int,
+        x1: Int,
+        y1: Int,
+        m: Modelo,
+        cruzAbsX: Float,
+        cruzAbsY: Float
+    ): Pair<Int, Int>? {
         val rw = x1 - x0
         val rh = y1 - y0
         if (rw < m.w || rh < m.h || m.norma < 1e-3) {
             melhorScore = 0.0
             return null
         }
+
+        val cruzRelX = cruzAbsX - x0
+        val cruzRelY = cruzAbsY - y0
 
         val px = IntArray(rw * rh)
         tela.getPixels(px, 0, rw, x0, y0, rw, rh)
@@ -382,7 +495,24 @@ object Rota {
         }
 
         melhorScore = melhor
-        return if (melhor >= Cal.LIMIAR) Pair(x0 + bx + m.w / 2, y0 + by + m.h / 2) else null
+        if (melhor >= Cal.LIMIAR) {
+            usandoFallbackVerde = false
+            val relPos = Pair(bx + m.w / 2, by + m.h / 2)
+            ultimoPinoVerdeRel = relPos
+            ultimaCruzRel = Pair(cruzRelX, cruzRelY)
+            return Pair(x0 + relPos.first, y0 + relPos.second)
+        }
+
+        val verdePos = acharBlocoPinoVerde(px, rw, rh, m.w, m.h, cruzRelX, cruzRelY)
+        if (verdePos != null) {
+            usandoFallbackVerde = true
+            ultimoPinoVerdeRel = verdePos
+            ultimaCruzRel = Pair(cruzRelX, cruzRelY)
+            return Pair(x0 + verdePos.first, y0 + verdePos.second)
+        }
+
+        usandoFallbackVerde = false
+        return null
     }
 
     private fun pontuar(g: DoubleArray, rw: Int, x: Int, y: Int, m: Modelo): Double {
