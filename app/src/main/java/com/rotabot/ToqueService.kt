@@ -30,14 +30,16 @@ class ToqueService : AccessibilityService() {
             val gesture = GestureDescription.Builder()
                 .addStroke(GestureDescription.StrokeDescription(path, 0L, duracaoMs.coerceAtLeast(1L)))
                 .build()
-            return service.dispatchGesture(gesture, object : GestureResultCallback() {
+            val aceito = service.dispatchGesture(gesture, object : GestureResultCallback() {
                 override fun onCompleted(gestureDescription: GestureDescription?) {
-                    callback?.invoke(true, "Toque ok em ${x.toInt()},${y.toInt()}")
+                    callback?.invoke(true, "Gesto concluído em ${x.toInt()},${y.toInt()} (jogo não confirmado)")
                 }
                 override fun onCancelled(gestureDescription: GestureDescription?) {
                     callback?.invoke(false, "Android cancelou o toque em ${x.toInt()},${y.toInt()}")
                 }
             }, null)
+            if (!aceito) callback?.invoke(false, "Android recusou o gesto em ${x.toInt()},${y.toInt()}")
+            return aceito
         }
     }
 
