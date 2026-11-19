@@ -248,7 +248,9 @@ object Rota {
         val toleranciaChegada = if (usandoFallbackVerde) tela.width * Cal.CHEGOU_FRAC * 1.35f else tela.width * Cal.CHEGOU_FRAC
         if (dist <= toleranciaChegada) {
             confirmacoes++
-            if (confirmacoes >= 2) {
+            // Exige quatro leituras consecutivas perto do alvo atual.
+            // Isso reduz avanço falso causado por uma detecção isolada.
+            if (confirmacoes >= 4) {
                 proximoPino()
                 return "CHEGOU no pino $indice"
             }
@@ -495,6 +497,8 @@ object Rota {
         if (melhor >= Cal.LIMIAR) {
             usandoFallbackVerde = false
             val relPos = Pair(bx + m.w / 2, by + m.h / 2)
+            // A referência pertence exclusivamente ao modelo atualmente selecionado.
+            // proximoPino() apaga esta referência antes de procurar o próximo número.
             ultimoPinoVerdeRel = relPos
             ultimaCruzRel = Pair(cruzRelX, cruzRelY)
             return Pair(x0 + relPos.first, y0 + relPos.second)
