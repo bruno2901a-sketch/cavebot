@@ -127,6 +127,7 @@ class BotService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        LogRota.init(this)
         workerThread = HandlerThread("RotaBot-Analise").also { it.start() }
         workerHandler = Handler(workerThread.looper)
         criarCanal()
