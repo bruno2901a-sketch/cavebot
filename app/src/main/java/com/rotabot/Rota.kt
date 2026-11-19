@@ -484,6 +484,7 @@ object Rota {
         val raio = (maxOf(m.w, m.h) * 5).coerceAtLeast(45)
 
         var melhor = -2.0
+        var segundoMelhor = -2.0
         var bx = 0
         var by = 0
         var y = 0
@@ -491,11 +492,14 @@ object Rota {
             var x = 0
             while (x <= rw - m.w) {
                 if (!temReferencia || Math.hypot((x + m.w / 2 - previstoX).toDouble(), (y + m.h / 2 - previstoY).toDouble()) <= raio) {
-                    val s = pontuar(g, rw, x, y, m)
-                    if (s > melhor) {
-                        melhor = s
+                    val score = pontuar(g, rw, x, y, m)
+                    if (score > melhor) {
+                        segundoMelhor = melhor
+                        melhor = score
                         bx = x
                         by = y
+                    } else if (score > segundoMelhor) {
+                        segundoMelhor = score
                     }
                 }
                 x += 2
@@ -520,10 +524,31 @@ object Rota {
 
         melhorScore = melhor
         if (melhor >= Cal.LIMIAR) {
+            // Antes de aceitar o candidato, compara o mesmo recorte com os outros
+            // números carregados. Se outro modelo explicar melhor a imagem, não
+            // assume que encontrou o destino atual.
+            var melhorOutroModelo = -2.0
+            for (outro in modelos) {
+                if (outro.indice == m.indice || outro.w != m.w || outro.h != m.h) continue
+                val scoreOutro = pontuar(g, rw, bx, by, outro)
+                if (scoreOutro > melhorOutroModelo) melhorOutroModelo = scoreOutro
+            }
+            val margemIdentidade = 0.035
+            if (melhorOutroModelo >= melhor - margemIdentidade) {
+                melhorScore = melhor
+                usandoFallbackVerde = false
+                return null
+            }
+
+            // Também rejeita uma busca ambígua: dois locais muito parecidos não
+            // podem provocar um clique ou uma confirmação de chegada.
+            if (segundoMelhor >= melhor - 0.025) {
+                usandoFallbackVerde = false
+                return null
+            }
+
             usandoFallbackVerde = false
             val relPos = Pair(bx + m.w / 2, by + m.h / 2)
-            // A referência pertence exclusivamente ao modelo atualmente selecionado.
-            // proximoPino() apaga esta referência antes de procurar o próximo número.
             ultimoPinoVerdeRel = relPos
             ultimaCruzRel = Pair(cruzRelX, cruzRelY)
             return Pair(x0 + relPos.first, y0 + relPos.second)
