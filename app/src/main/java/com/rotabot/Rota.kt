@@ -484,7 +484,6 @@ object Rota {
         val raio = (maxOf(m.w, m.h) * 5).coerceAtLeast(45)
 
         var melhor = -2.0
-        var segundoMelhor = -2.0
         var bx = 0
         var by = 0
         var y = 0
@@ -494,12 +493,9 @@ object Rota {
                 if (!temReferencia || Math.hypot((x + m.w / 2 - previstoX).toDouble(), (y + m.h / 2 - previstoY).toDouble()) <= raio) {
                     val score = pontuar(g, rw, x, y, m)
                     if (score > melhor) {
-                        segundoMelhor = melhor
                         melhor = score
                         bx = x
                         by = y
-                    } else if (score > segundoMelhor) {
-                        segundoMelhor = score
                     }
                 }
                 x += 2
@@ -536,13 +532,6 @@ object Rota {
             val margemIdentidade = 0.035
             if (melhorOutroModelo >= melhor - margemIdentidade) {
                 melhorScore = melhor
-                usandoFallbackVerde = false
-                return null
-            }
-
-            // Também rejeita uma busca ambígua: dois locais muito parecidos não
-            // podem provocar um clique ou uma confirmação de chegada.
-            if (segundoMelhor >= melhor - 0.025) {
                 usandoFallbackVerde = false
                 return null
             }
