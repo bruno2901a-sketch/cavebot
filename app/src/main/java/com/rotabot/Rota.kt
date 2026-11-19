@@ -477,9 +477,30 @@ object Rota {
             val r = (px[i] shr 16) and 0xFF
             val verde = (px[i] shr 8) and 0xFF
             val b = px[i] and 0xFF
-            // A cruz/seta branca do jogador pode cobrir o centro do ícone.
-            // Esses pixels não devem participar da comparação do modelo.
-            ocultoPelaCruz[i] = r >= 190 && verde >= 190 && b >= 190
+            // Ignora os pixels realmente brancos da cruz e também sua borda
+            // suavizada, que pode não atingir o limite de branco puro.
+            ocultoPelaCruz[i] = r >= 185 && verde >= 185 && b >= 185
+        }
+
+        // A cruz do jogador tem posição conhecida. Mascara seu formato mesmo
+        // quando os pixels são cinza/antialias e não parecem totalmente brancos.
+        // Assim o centro do marcador continua sendo comparado pelas partes visíveis.
+        val centroCruzX = cruzRelX.toInt()
+        val centroCruzY = cruzRelY.toInt()
+        val meiaLarguraCruz = (m.w * 0.12f).toInt().coerceAtLeast(2)
+        val alcanceCruz = (m.h * 0.43f).toInt().coerceAtLeast(7)
+        for (dy in -alcanceCruz..alcanceCruz) {
+            for (dx in -alcanceCruz..alcanceCruz) {
+                val dentroDaCruz =
+                    (kotlin.math.abs(dx) <= meiaLarguraCruz) ||
+                    (kotlin.math.abs(dy) <= meiaLarguraCruz)
+                if (!dentroDaCruz) continue
+                val xx = centroCruzX + dx
+                val yy = centroCruzY + dy
+                if (xx in 0 until rw && yy in 0 until rh) {
+                    ocultoPelaCruz[yy * rw + xx] = true
+                }
+            }
         }
 
         // Depois do primeiro reconhecimento, procura o mesmo alvo na posição
