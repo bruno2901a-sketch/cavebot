@@ -83,8 +83,11 @@ object Rota {
     private var estavaEmLuta = false
     private var tentativaDesvio = 0
     private var tempoInicioLuta = 0L
+    // A cruz fica fixa no centro; o rastreamento acompanha o deslocamento do ícone.
     private var ultimoPinoVerdeRel: Pair<Int, Int>? = null
-    private var ultimaCruzRel: Pair<Float, Float>? = null
+    private var quadrosDesdeDeteccao = 0
+    private var velocidadePinoX = 0f
+    private var velocidadePinoY = 0f
     private var usandoFallbackVerde = false
     private var cliquesNoPinoVerde = 0
     @Volatile private var melhorScore = 0.0
@@ -122,7 +125,9 @@ object Rota {
         tentativaDesvio = 0
         tempoInicioLuta = 0L
         ultimoPinoVerdeRel = null
-        ultimaCruzRel = null
+        quadrosDesdeDeteccao = 0
+        velocidadePinoX = 0f
+        velocidadePinoY = 0f
         usandoFallbackVerde = false
         cliquesNoPinoVerde = 0
         BotService.pararAlarme()
@@ -154,7 +159,9 @@ object Rota {
         ultimaDistVista = -1f
         tentativaDesvio = 0
         ultimoPinoVerdeRel = null
-        ultimaCruzRel = null
+        quadrosDesdeDeteccao = 0
+        velocidadePinoX = 0f
+        velocidadePinoY = 0f
         usandoFallbackVerde = false
         cliquesNoPinoVerde = 0
     }
@@ -376,78 +383,6 @@ object Rota {
         return if (melhor >= 62) Pair(x0 + bx + 1, y0 + by + 1) else null
     }
 
-    private fun acharBlocoPinoVerde(
-        px: IntArray,
-        rw: Int,
-        rh: Int,
-        mw: Int,
-        mh: Int,
-        cruzRelX: Float,
-        cruzRelY: Float
-    ): Pair<Int, Int>? {
-        val esperadoX: Double
-        val esperadoY: Double
-        val temRef = ultimoPinoVerdeRel != null && ultimaCruzRel != null
-        if (temRef) {
-            val dxCruz = cruzRelX - ultimaCruzRel!!.first
-            val dyCruz = cruzRelY - ultimaCruzRel!!.second
-            esperadoX = (ultimoPinoVerdeRel!!.first - dxCruz).toDouble()
-            esperadoY = (ultimoPinoVerdeRel!!.second - dyCruz).toDouble()
-        } else {
-            esperadoX = -1.0
-            esperadoY = -1.0
-        }
-
-        val raioBusca = Math.max(mw, mh) * 3.0
-        var melhorScoreVerde = -1.0
-        var melhorContagem = 0
-        var bx = -1
-        var by = -1
-
-        var y = 0
-        while (y <= rh - mh) {
-            var x = 0
-            while (x <= rw - mw) {
-                var verde = 0
-                for (yy in 0 until mh) {
-                    val base = (y + yy) * rw + x
-                    for (xx in 0 until mw) {
-                        if (ehVerdePinoAtivo(px[base + xx])) verde++
-                    }
-                }
-                if (verde >= 25) {
-                    val cx = x + mw / 2
-                    val cy = y + mh / 2
-                    var score = verde.toDouble()
-                    if (temRef) {
-                        val distEsperado = Math.hypot(cx - esperadoX, cy - esperadoY)
-                        if (distEsperado > raioBusca) {
-                            score *= 0.25
-                        } else {
-                            score += (1.0 - distEsperado / raioBusca) * 40.0
-                        }
-                    }
-                    if (score > melhorScoreVerde) {
-                        melhorScoreVerde = score
-                        melhorContagem = verde
-                        bx = cx
-                        by = cy
-                    }
-                }
-                x += 2
-            }
-            y += 2
-        }
-
-        if (bx >= 0 && by >= 0) {
-            val area = (mw * mh).coerceAtLeast(1)
-            val frac = (melhorContagem.toDouble() / area.toDouble()).coerceIn(0.0, 1.0)
-            melhorScore = (0.78 + frac * 0.17).coerceIn(0.78, 0.95)
-            return Pair(bx, by)
-        }
-        return null
-    }
-
     private fun achar(
         tela: Bitmap,
         x0: Int,
@@ -476,41 +411,30 @@ object Rota {
             g[i] = cinza(px[i])
             val r = (px[i] shr 16) and 0xFF
             val verde = (px[i] shr 8) and 0xFF
-            val b = px[i] and 0xFF
-            // Ignora os pixels realmente brancos da cruz e também sua borda
-            // suavizada, que pode não atingir o limite de branco puro.
-            ocultoPelaCruz[i] = r >= 185 && verde >= 185 && b >= 185
+            val blue = px[i] and 0xFF
+            ocultoPelaCruz[i] = r >= 185 && verde >= 185 && blue >= 185
         }
 
-        // A cruz do jogador tem posição conhecida. Mascara seu formato mesmo
-        // quando os pixels são cinza/antialias e não parecem totalmente brancos.
-        // Assim o centro do marcador continua sendo comparado pelas partes visíveis.
         val centroCruzX = cruzRelX.toInt()
         val centroCruzY = cruzRelY.toInt()
         val meiaLarguraCruz = (m.w * 0.12f).toInt().coerceAtLeast(2)
         val alcanceCruz = (m.h * 0.43f).toInt().coerceAtLeast(7)
         for (dy in -alcanceCruz..alcanceCruz) {
             for (dx in -alcanceCruz..alcanceCruz) {
-                val dentroDaCruz =
-                    (kotlin.math.abs(dx) <= meiaLarguraCruz) ||
-                    (kotlin.math.abs(dy) <= meiaLarguraCruz)
+                val dentroDaCruz = kotlin.math.abs(dx) <= meiaLarguraCruz || kotlin.math.abs(dy) <= meiaLarguraCruz
                 if (!dentroDaCruz) continue
                 val xx = centroCruzX + dx
                 val yy = centroCruzY + dy
-                if (xx in 0 until rw && yy in 0 until rh) {
-                    ocultoPelaCruz[yy * rw + xx] = true
-                }
+                if (xx in 0 until rw && yy in 0 until rh) ocultoPelaCruz[yy * rw + xx] = true
             }
         }
 
-        // Depois do primeiro reconhecimento, procura o mesmo alvo na posição
-        // prevista pelo deslocamento da cruz. Isso impede trocar para outro pino
-        // parecido (inclusive um pino verde) durante o trajeto.
+        quadrosDesdeDeteccao++
         val ref = ultimoPinoVerdeRel
-        val cruzRef = ultimaCruzRel
-        val temReferencia = ref != null && cruzRef != null
-        val previstoX = if (temReferencia) ref!!.first - (cruzRelX - cruzRef!!.first).toInt() else -1
-        val previstoY = if (temReferencia) ref!!.second - (cruzRelY - cruzRef!!.second).toInt() else -1
+        val temReferencia = ref != null
+        val quadrosPrevistos = quadrosDesdeDeteccao.coerceAtMost(4)
+        val previstoX = if (temReferencia) ref!!.first + (velocidadePinoX * quadrosPrevistos).toInt() else -1
+        val previstoY = if (temReferencia) ref!!.second + (velocidadePinoY * quadrosPrevistos).toInt() else -1
         val raio = (maxOf(m.w, m.h) * 5).coerceAtLeast(45)
 
         var melhor = -2.0
@@ -568,8 +492,25 @@ object Rota {
 
             usandoFallbackVerde = false
             val relPos = Pair(bx + m.w / 2, by + m.h / 2)
+            val anterior = ultimoPinoVerdeRel
+            if (anterior != null) {
+                val intervalo = quadrosDesdeDeteccao.coerceAtLeast(1)
+                val dx = relPos.first - anterior.first
+                val dy = relPos.second - anterior.second
+                val limiteSalto = (maxOf(m.w, m.h) * 5).coerceAtLeast(45)
+                if (Math.hypot(dx.toDouble(), dy.toDouble()) <= limiteSalto) {
+                    velocidadePinoX = (dx.toFloat() / intervalo).coerceIn(-30f, 30f)
+                    velocidadePinoY = (dy.toFloat() / intervalo).coerceIn(-30f, 30f)
+                } else {
+                    velocidadePinoX = 0f
+                    velocidadePinoY = 0f
+                }
+            } else {
+                velocidadePinoX = 0f
+                velocidadePinoY = 0f
+            }
             ultimoPinoVerdeRel = relPos
-            ultimaCruzRel = Pair(cruzRelX, cruzRelY)
+            quadrosDesdeDeteccao = 0
             return Pair(x0 + relPos.first, y0 + relPos.second)
         }
 
@@ -577,16 +518,11 @@ object Rota {
         // a posição previamente reconhecida, compensando o deslocamento do minimapa.
         // Não procura "qualquer verde" no mapa: isso confundia o destino com outros pinos.
         val referencia = ultimoPinoVerdeRel
-        val cruzAnterior = ultimaCruzRel
-        if (referencia != null && cruzAnterior != null) {
-            val dx = cruzRelX - cruzAnterior.first
-            val dy = cruzRelY - cruzAnterior.second
-            val previstoX = (referencia.first - dx).toInt()
-            val previstoY = (referencia.second - dy).toInt()
+        if (referencia != null && quadrosDesdeDeteccao in 1..4) {
+            val previstoX = referencia.first + (velocidadePinoX * quadrosDesdeDeteccao).toInt()
+            val previstoY = referencia.second + (velocidadePinoY * quadrosDesdeDeteccao).toInt()
             if (previstoX in 0 until rw && previstoY in 0 until rh) {
                 usandoFallbackVerde = true
-                ultimoPinoVerdeRel = Pair(previstoX, previstoY)
-                ultimaCruzRel = Pair(cruzRelX, cruzRelY)
                 melhorScore = 0.0
                 return Pair(x0 + previstoX, y0 + previstoY)
             }
