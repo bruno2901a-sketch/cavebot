@@ -76,6 +76,7 @@ object Rota {
     private var direcaoIda = true
     private var ultimoClique = 0L
     private var confirmacoes = 0
+    private var confirmacoesFallback = 0
     private var ultimaDist = -1f
     private var semProgresso = 0
     private var naoVisto = 0
@@ -117,6 +118,7 @@ object Rota {
         direcaoIda = true
         ultimoClique = 0L
         confirmacoes = 0
+        confirmacoesFallback = 0
         ultimaDist = -1f
         semProgresso = 0
         naoVisto = 0
@@ -234,6 +236,7 @@ object Rota {
             semProgresso = 0
             tentativaDesvio = 0
             confirmacoes = 0
+            confirmacoesFallback = 0
             return if (usaLoot) "AUTOLOOT concluído" else "MONSTRO MORREU (Retomando pino atual)"
         }
 
@@ -258,18 +261,30 @@ object Rota {
         val dist = Math.hypot((achado.first - cx).toDouble(), (achado.second - cy).toDouble()).toFloat()
         ultimaDistVista = dist
 
-        val toleranciaChegada = if (usandoFallbackVerde) tela.width * Cal.CHEGOU_FRAC * 1.35f else tela.width * Cal.CHEGOU_FRAC
+        val toleranciaChegada = tela.width * Cal.CHEGOU_FRAC
         if (dist <= toleranciaChegada) {
+            if (usandoFallbackVerde) {
+                val ateCruzX = cx - achado.first
+                val ateCruzY = cy - achado.second
+                val produto = velocidadePinoX * ateCruzX + velocidadePinoY * ateCruzY
+                val velocidade = Math.hypot(velocidadePinoX.toDouble(), velocidadePinoY.toDouble())
+                confirmacoesFallback++
+                if (confirmacoesFallback >= 2 && quadrosDesdeDeteccao in 1..4 && produto > 0f && velocidade >= 0.5) {
+                    proximoPino()
+                    return "CHEGOU ao pino $indice (trajetória confirmada)"
+                }
+                return "PINO $indice SOB A CRUZ - confirmando trajetória"
+            }
+            confirmacoesFallback = 0
             confirmacoes++
-            // Exige quatro leituras consecutivas perto do alvo atual.
-            // Isso reduz avanço falso causado por uma detecção isolada.
             if (confirmacoes >= 4) {
                 proximoPino()
-                return "CHEGOU no pino $indice"
+                return "CHEGOU no pino $indice (leitura visual)"
             }
             return "CHEGANDO no pino $indice $acerto"
         }
         confirmacoes = 0
+        confirmacoesFallback = 0
 
         val agora = SystemClock.uptimeMillis()
         if (agora - ultimoClique >= Cal.INTERVALO_CLIQUE) {
@@ -484,7 +499,7 @@ object Rota {
                 if (scoreOutro > melhorOutroModelo) melhorOutroModelo = scoreOutro
             }
             val margemIdentidade = 0.035
-            if (melhorOutroModelo >= melhor - margemIdentidade) {
+            if (melhorOutroModelo > melhor + margemIdentidade) {
                 melhorScore = melhor
                 usandoFallbackVerde = false
                 return null
@@ -529,7 +544,7 @@ object Rota {
         }
 
         usandoFallbackVerde = false
-        melhorScore = 0.0
+        melhorScore = melhor.coerceAtLeast(0.0)
         return null
     }
 
