@@ -18,7 +18,7 @@ object Cal {
 
     const val CHEGOU_FRAC = 0.015f
     const val LIMIAR = 0.78f
-    const val INTERVALO_CLIQUE = 1500L
+    const val INTERVALO_CLIQUE = 1000L
     const val TOTAL_ICONES = 20
     const val LADO_ICONE = 26
 
@@ -220,8 +220,14 @@ object Rota {
             if (usaLoot) {
                 executarAutoloot(tela.width, tela.height)
             }
-            ultimoClique = SystemClock.uptimeMillis()
-            return if (usaLoot) "AUTOLOOT concluído" else "MONSTRO MORREU (Retornando)"
+            // Ao sair da batalha, não espera o intervalo normal: o próximo ciclo
+            // procura novamente o mesmo destino e pode clicar imediatamente.
+            ultimoClique = 0L
+            ultimaDist = -1f
+            semProgresso = 0
+            tentativaDesvio = 0
+            confirmacoes = 0
+            return if (usaLoot) "AUTOLOOT concluído" else "MONSTRO MORREU (Retomando pino atual)"
         }
 
         val tamanho = modelos.size
@@ -271,16 +277,23 @@ object Rota {
             var alvoX = achado.first.toFloat()
             var alvoY = achado.second.toFloat()
 
-            if (semProgresso >= 4 && !usandoFallbackVerde) {
-                val desvioAjustado = 6f
-                when (tentativaDesvio % 4) {
-                    0 -> alvoX += desvioAjustado
-                    1 -> alvoY -= desvioAjustado
-                    2 -> alvoX -= desvioAjustado
-                    3 -> alvoY += desvioAjustado
+            // Primeira tentativa: centro do ícone. Se a distância não diminuir
+            // após 1 segundo, percorre pequenas correções ao redor do mesmo alvo.
+            if (semProgresso >= 1 && !usandoFallbackVerde) {
+                val escala = (tela.width / 2460f).coerceAtLeast(0.5f)
+                val d = 7f * escala
+                when (tentativaDesvio % 8) {
+                    0 -> alvoX += d
+                    1 -> alvoX -= d
+                    2 -> alvoY -= d
+                    3 -> alvoY += d
+                    4 -> { alvoX += d; alvoY -= d }
+                    5 -> { alvoX -= d; alvoY -= d }
+                    6 -> { alvoX += d; alvoY += d }
+                    7 -> { alvoX -= d; alvoY += d }
                 }
                 tentativaDesvio++
-                semProgresso = 2
+                semProgresso = 1
             }
 
             tocar(alvoX, alvoY)
@@ -460,6 +473,16 @@ object Rota {
         val g = DoubleArray(rw * rh)
         for (i in px.indices) g[i] = cinza(px[i])
 
+        // Depois do primeiro reconhecimento, procura o mesmo alvo na posição
+        // prevista pelo deslocamento da cruz. Isso impede trocar para outro pino
+        // parecido (inclusive um pino verde) durante o trajeto.
+        val ref = ultimoPinoVerdeRel
+        val cruzRef = ultimaCruzRel
+        val temReferencia = ref != null && cruzRef != null
+        val previstoX = if (temReferencia) ref!!.first - (cruzRelX - cruzRef!!.first).toInt() else -1
+        val previstoY = if (temReferencia) ref!!.second - (cruzRelY - cruzRef!!.second).toInt() else -1
+        val raio = (maxOf(m.w, m.h) * 5).coerceAtLeast(45)
+
         var melhor = -2.0
         var bx = 0
         var by = 0
@@ -467,11 +490,13 @@ object Rota {
         while (y <= rh - m.h) {
             var x = 0
             while (x <= rw - m.w) {
-                val s = pontuar(g, rw, x, y, m)
-                if (s > melhor) {
-                    melhor = s
-                    bx = x
-                    by = y
+                if (!temReferencia || Math.hypot((x + m.w / 2 - previstoX).toDouble(), (y + m.h / 2 - previstoY).toDouble()) <= raio) {
+                    val s = pontuar(g, rw, x, y, m)
+                    if (s > melhor) {
+                        melhor = s
+                        bx = x
+                        by = y
+                    }
                 }
                 x += 2
             }
