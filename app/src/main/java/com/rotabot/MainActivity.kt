@@ -60,6 +60,11 @@ class MainActivity : Activity() {
             isChecked = true
         }
 
+        val checkSoAlarme = CheckBox(this).apply {
+            text = "Modo somente alarme (pesca): não anda e não clica; toca o alarme se algo ficar 15s ou mais na Batalha"
+            isChecked = false
+        }
+
         val labelVolume = TextView(this).apply { text = "Volume do Alerta:" }
         val seekVolume = SeekBar(this).apply {
             max = 100
@@ -110,7 +115,8 @@ class MainActivity : Activity() {
                     Toast.makeText(this@MainActivity, "Ative a permissão de sobreposição.", Toast.LENGTH_LONG).show()
                     return@setOnClickListener
                 }
-                if (ToqueService.instance == null) {
+                val modoSoAlarme = checkSoAlarme.isChecked
+                if (!modoSoAlarme && ToqueService.instance == null) {
                     Toast.makeText(this@MainActivity, "Ative o RotaBot em Acessibilidade.", Toast.LENGTH_LONG).show()
                     return@setOnClickListener
                 }
@@ -119,6 +125,7 @@ class MainActivity : Activity() {
                     Toast.makeText(this@MainActivity, "Autorize a captura da tela primeiro.", Toast.LENGTH_LONG).show()
                     return@setOnClickListener
                 }
+                val usaAlertaFinal = if (modoSoAlarme) true else checkAlerta.isChecked
                 val serviceIntent = Intent(this@MainActivity, BotService::class.java)
                     .setAction(BotService.ACAO_INICIAR)
                     .putExtra(BotService.EXTRA_INICIO, a)
@@ -126,7 +133,8 @@ class MainActivity : Activity() {
                     .putExtra(BotService.EXTRA_RESULTADO, resultadoCaptura)
                     .putExtra(BotService.EXTRA_DADOS, dados)
                     .putExtra(BotService.EXTRA_USA_LOOT, checkLoot.isChecked)
-                    .putExtra(BotService.EXTRA_USA_ALERTA, checkAlerta.isChecked)
+                    .putExtra(BotService.EXTRA_USA_ALERTA, usaAlertaFinal)
+                    .putExtra(BotService.EXTRA_SO_ALARME, modoSoAlarme)
                     .putExtra(BotService.EXTRA_VOLUME, seekVolume.progress)
                     .putExtra(BotService.EXTRA_URI_SOM, uriSomSelecionado)
 
@@ -140,6 +148,7 @@ class MainActivity : Activity() {
         tela.addView(fim)
         tela.addView(checkLoot)
         tela.addView(checkAlerta)
+        tela.addView(checkSoAlarme)
         tela.addView(labelVolume)
         tela.addView(seekVolume)
         tela.addView(btnEscolherSom)
