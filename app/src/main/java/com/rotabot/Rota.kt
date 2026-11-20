@@ -184,6 +184,8 @@ object Rota {
     private var versaoRegistradaNoLog = false
     private var presencaDesde = 0L
     private var quadrosSemMonstroAlarme = 0
+    private var estadoLogAlarme = 0
+    private var ultimoLogAlarmeEm = 0L
 
     @Volatile
     private var melhorScore = 0.0
@@ -281,6 +283,8 @@ object Rota {
         versaoRegistradaNoLog = false
         presencaDesde = 0L
         quadrosSemMonstroAlarme = 0
+        estadoLogAlarme = 0
+        ultimoLogAlarmeEm = 0L
         melhorScore = 0.0
         BotService.pararAlarme()
     }
@@ -483,7 +487,24 @@ object Rota {
         return if (extra != null && extra.isNotEmpty()) "$base | $extra" else base
     }
 
+    private fun registrarLogMudancaAlarme(
+        novoEstado: Int,
+        mensagem: String,
+        agora: Long,
+        context: Context,
+        tela: Bitmap
+    ) {
+        if (estadoLogAlarme == novoEstado) return
+        if (agora - ultimoLogAlarmeEm < 1000L) return
+        estadoLogAlarme = novoEstado
+        ultimoLogAlarmeEm = agora
+        LogRota.registrarPasso(context, mensagem, tela)
+    }
+
     fun passoSoAlarme(tela: Bitmap, context: Context, uriSom: String, volume: Int): String {
+        if (tela.height > tela.width) {
+            return "Aguardando o jogo em paisagem"
+        }
         val agora = SystemClock.uptimeMillis()
         if (temMonstro(tela)) {
             quadrosSemMonstroAlarme = 0
@@ -494,15 +515,26 @@ object Rota {
             val segundos = decorridoMs / 1000L
             return if (decorridoMs >= 15000L) {
                 BotService.tocarAlarme(context, uriSom, volume)
-                "ALARME: batalha há ${segundos}s"
+                val msg = "ALARME: batalha há ${segundos}s"
+                registrarLogMudancaAlarme(2, msg, agora, context, tela)
+                msg
             } else {
-                "Batalha: ${segundos}s de 15s"
+                val msg = "Batalha: ${segundos}s de 15s"
+                registrarLogMudancaAlarme(1, msg, agora, context, tela)
+                msg
             }
         } else {
             quadrosSemMonstroAlarme++
             return if (quadrosSemMonstroAlarme >= 2) {
+                val decorridoAntes = if (presencaDesde > 0L) (agora - presencaDesde) / 1000L else 0L
+                val estavaEmAlarme = estadoLogAlarme == 2
                 presencaDesde = 0L
                 BotService.pararAlarme()
+                if (estavaEmAlarme) {
+                    registrarLogMudancaAlarme(0, "Alarme parou por falta de monstro (durou ${decorridoAntes}s)", agora, context, tela)
+                } else {
+                    estadoLogAlarme = 0
+                }
                 "Sem monstros na Batalha"
             } else {
                 "Verificando..."
