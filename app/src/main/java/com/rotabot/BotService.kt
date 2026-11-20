@@ -107,6 +107,9 @@ class BotService : Service() {
     @Volatile private var processando = false
     @Volatile private var toqueDesde = 0L
     @Volatile private var ultimoToque = ""
+    @Volatile private var ultimoFrameEm = 0L
+    @Volatile private var ultimaRecriacaoCapturaEm = 0L
+    private var ultimoFrameLog: Bitmap? = null
     private var inicio = 1
     private var fim = 5
     private var usaLoot = false
@@ -196,7 +199,26 @@ class BotService : Service() {
         pausaManual = false
         processando = false
         ultimoToque = ""
+        ultimoFrameEm = 0L
+        ultimaRecriacaoCapturaEm = 0L
         criarOverlay()
+    }
+
+    private fun registrarLogCaptura(mensagem: String) {
+        val bmp = ultimoFrameLog ?: return
+        if (bmp.isRecycled) return
+        try {
+            LogRota.registrarPasso(this, mensagem, bmp)
+        } catch (_: Exception) {}
+    }
+
+    private fun recriarLeitorCaptura(m: DisplayMetrics) {
+        val atual = imageReader
+        val novo = ImageReader.newInstance(m.widthPixels, m.heightPixels, PixelFormat.RGBA_8888, 2)
+        virtualDisplay?.resize(m.widthPixels, m.heightPixels, m.densityDpi)
+        virtualDisplay?.surface = novo.surface
+        imageReader = novo
+        try { atual?.close() } catch (_: Exception) {}
     }
 
     private fun ajustarRotacao() {
@@ -205,11 +227,8 @@ class BotService : Service() {
         @Suppress("DEPRECATION")
         (getSystemService(WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealMetrics(m)
         if (m.widthPixels == atual.width && m.heightPixels == atual.height) return
-        val novo = ImageReader.newInstance(m.widthPixels, m.heightPixels, PixelFormat.RGBA_8888, 2)
-        virtualDisplay?.resize(m.widthPixels, m.heightPixels, m.densityDpi)
-        virtualDisplay?.surface = novo.surface
-        imageReader = novo
-        atual.close()
+        recriarLeitorCaptura(m)
+        registrarLogCaptura("TELA mudou para ${m.widthPixels}x${m.heightPixels}")
     }
 
     private fun executarCiclo() {
@@ -218,7 +237,24 @@ class BotService : Service() {
             processando = false
         }
         ajustarRotacao()
-        val image = try { imageReader?.acquireLatestImage() } catch (_: Exception) { null } ?: return
+        val agora = SystemClock.uptimeMillis()
+        val image = try { imageReader?.acquireLatestImage() } catch (_: Exception) { null }
+        if (image == null) {
+            if (!pausaManual && ultimoFrameEm > 0L && agora - ultimoFrameEm > 3000L) {
+                val segsSemImagem = (agora - ultimoFrameEm) / 1000L
+                registrarStatus("SEM IMAGEM há ${segsSemImagem}s - recriando captura")
+                if (agora - ultimaRecriacaoCapturaEm >= 5000L) {
+                    ultimaRecriacaoCapturaEm = agora
+                    val m = DisplayMetrics()
+                    @Suppress("DEPRECATION")
+                    (getSystemService(WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealMetrics(m)
+                    recriarLeitorCaptura(m)
+                    registrarLogCaptura("SEM IMAGEM há ${segsSemImagem}s - recriando captura (${m.widthPixels}x${m.heightPixels})")
+                }
+            }
+            return
+        }
+        ultimoFrameEm = agora
         val frame: Bitmap? = try {
             val plane = image.planes[0]
             val rowPixels = plane.rowStride / plane.pixelStride
@@ -231,6 +267,14 @@ class BotService : Service() {
             } else raw
         } catch (_: Exception) { null } finally { image.close() }
         if (frame == null) return
+
+        try {
+            val copiaLog = frame.copy(Bitmap.Config.ARGB_8888, false)
+            if (copiaLog != null) {
+                ultimoFrameLog?.recycle()
+                ultimoFrameLog = copiaLog
+            }
+        } catch (_: Exception) {}
 
         try {
             val resultado = if (pausaManual) {
@@ -289,6 +333,9 @@ class BotService : Service() {
                 setOnClickListener {
                     if (!rotaIniciada) {
                         Rota.resetar()
+                        val agoraInicio = SystemClock.uptimeMillis()
+                        ultimoFrameEm = agoraInicio
+                        ultimaRecriacaoCapturaEm = 0L
                         rotaIniciada = true
                         rodando = true
                         pausaManual = false
@@ -369,6 +416,8 @@ class BotService : Service() {
         imageReader = null
         projection?.stop()
         projection = null
+        ultimoFrameLog?.recycle()
+        ultimoFrameLog = null
     }
 
     private fun pararTudo(motivo: String) {
