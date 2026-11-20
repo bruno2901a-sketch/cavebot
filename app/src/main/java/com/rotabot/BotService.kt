@@ -46,6 +46,7 @@ class BotService : Service() {
         const val EXTRA_DADOS = "dados"
         const val EXTRA_USA_LOOT = "usa_loot"
         const val EXTRA_USA_ALERTA = "usa_alerta"
+        const val EXTRA_SO_ALARME = "so_alarme"
         const val EXTRA_VOLUME = "volume"
         const val EXTRA_URI_SOM = "uri_som"
 
@@ -110,6 +111,7 @@ class BotService : Service() {
     private var fim = 5
     private var usaLoot = false
     private var usaAlerta = true
+    private var soAlarme = false
     private var volumeAlerta = 80
     private var uriSomAlerta = ""
 
@@ -160,6 +162,7 @@ class BotService : Service() {
         fim = intent.getIntExtra(EXTRA_FIM, 5).coerceIn(inicio, Cal.TOTAL_ICONES)
         usaLoot = intent.getBooleanExtra(EXTRA_USA_LOOT, false)
         usaAlerta = intent.getBooleanExtra(EXTRA_USA_ALERTA, true)
+        soAlarme = intent.getBooleanExtra(EXTRA_SO_ALARME, false)
         volumeAlerta = intent.getIntExtra(EXTRA_VOLUME, 80)
         uriSomAlerta = intent.getStringExtra(EXTRA_URI_SOM) ?: ""
 
@@ -230,7 +233,14 @@ class BotService : Service() {
         if (frame == null) return
 
         try {
-            val resultado = if (pausaManual) "Pausado" else Rota.passo(frame, this, usaLoot, usaAlerta, uriSomAlerta, volumeAlerta) { x, y -> tocarNaTela(x, y) }
+            val resultado = if (pausaManual) {
+                pararAlarme()
+                "Pausado"
+            } else if (soAlarme) {
+                Rota.passoSoAlarme(frame, this, uriSomAlerta, volumeAlerta)
+            } else {
+                Rota.passo(frame, this, usaLoot, usaAlerta, uriSomAlerta, volumeAlerta) { x, y -> tocarNaTela(x, y) }
+            }
             registrarStatus(if (ultimoToque.isEmpty()) resultado else "$resultado | $ultimoToque")
         } finally {
             frame.recycle()
@@ -238,6 +248,7 @@ class BotService : Service() {
     }
 
     private fun tocarNaTela(x: Float, y: Float) {
+        if (soAlarme) return
         if (processando) return
         processando = true
         toqueDesde = SystemClock.uptimeMillis()
