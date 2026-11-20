@@ -182,6 +182,8 @@ object Rota {
     private var indiceCliqueVariavel = 0
     private var fimLutaEm = 0L
     private var versaoRegistradaNoLog = false
+    private var presencaDesde = 0L
+    private var quadrosSemMonstroAlarme = 0
 
     @Volatile
     private var melhorScore = 0.0
@@ -277,6 +279,8 @@ object Rota {
         indiceCliqueVariavel = 0
         fimLutaEm = 0L
         versaoRegistradaNoLog = false
+        presencaDesde = 0L
+        quadrosSemMonstroAlarme = 0
         melhorScore = 0.0
         BotService.pararAlarme()
     }
@@ -477,6 +481,33 @@ object Rota {
         }
         val base = "fase=$faseNome | pino=$pinoId | acerto=$scoreStr | verde=$qtdVerde | $rgbStr | dist=$distStr | semProgresso=$progresso"
         return if (extra != null && extra.isNotEmpty()) "$base | $extra" else base
+    }
+
+    fun passoSoAlarme(tela: Bitmap, context: Context, uriSom: String, volume: Int): String {
+        val agora = SystemClock.uptimeMillis()
+        if (temMonstro(tela)) {
+            quadrosSemMonstroAlarme = 0
+            if (presencaDesde == 0L) {
+                presencaDesde = agora
+            }
+            val decorridoMs = agora - presencaDesde
+            val segundos = decorridoMs / 1000L
+            return if (decorridoMs >= 15000L) {
+                BotService.tocarAlarme(context, uriSom, volume)
+                "ALARME: batalha há ${segundos}s"
+            } else {
+                "Batalha: ${segundos}s de 15s"
+            }
+        } else {
+            quadrosSemMonstroAlarme++
+            return if (quadrosSemMonstroAlarme >= 2) {
+                presencaDesde = 0L
+                BotService.pararAlarme()
+                "Sem monstros na Batalha"
+            } else {
+                "Verificando..."
+            }
+        }
     }
 
     fun passo(
