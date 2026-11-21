@@ -30,7 +30,6 @@ object Cal {
     const val SEM_ROTA_X1 = 0.559f
     const val SEM_ROTA_Y1 = 0.827f
     const val MAX_FALHAS_PINO = 3
-    const val MAX_LUTA_MS = 20000L
     const val IGNORAR_LUTA_MS = 4000L
     const val IGNORAR_SEM_ROTA_MS = 2500L
     const val NAO_VISTO_LIMITE = 12
@@ -145,6 +144,21 @@ private fun ehPixelVerdeCaixa(p: Int): Boolean {
 }
 
 object Rota {
+    @Volatile
+    var limiteAlarmeMs: Long = 30000L
+
+    @Volatile
+    var cancelarAutoloot = false
+
+    @Volatile
+    var intervaloCliqueMs: Long = 700L
+
+    @Volatile
+    var lutas: Int = 0
+
+    @Volatile
+    var autoloots: Int = 0
+
     private var modelos: List<Modelo> = emptyList()
     private var fase = FaseNavegacao.ESCOLHER
     private var alvo = 0
@@ -186,6 +200,10 @@ object Rota {
     private var quadrosSemMonstroAlarme = 0
     private var estadoLogAlarme = 0
     private var ultimoLogAlarmeEm = 0L
+    private var ultimoConfirmado: Int? = null
+    private var timestampsResync: ArrayDeque<Long> = ArrayDeque()
+    private var estadoLogLutaAlarme = 0
+    private var ultimoLogLutaAlarmeEm = 0L
 
     @Volatile
     private var melhorScore = 0.0
@@ -285,6 +303,13 @@ object Rota {
         quadrosSemMonstroAlarme = 0
         estadoLogAlarme = 0
         ultimoLogAlarmeEm = 0L
+        ultimoConfirmado = null
+        timestampsResync.clear()
+        estadoLogLutaAlarme = 0
+        ultimoLogLutaAlarmeEm = 0L
+        cancelarAutoloot = false
+        lutas = 0
+        autoloots = 0
         melhorScore = 0.0
         BotService.pararAlarme()
     }
@@ -316,7 +341,17 @@ object Rota {
         candidatoConsistente = null
     }
 
-    private fun proximoPino(agora: Long) {
+    private fun registrarLogAlvo(context: Context?, tela: Bitmap?) {
+        val idPino = if (alvo in modelos.indices) modelos[alvo].indice else alvo
+        val dirStr = if (direcaoIda) "IDA" else "VOLTA"
+        val msg = "ALVO $idPino DIRECAO $dirStr"
+        val ctx = context
+        if (ctx != null && tela != null) {
+            LogRota.registrarPasso(ctx, msg, tela)
+        }
+    }
+
+    private fun proximoPino(agora: Long, context: Context? = null, tela: Bitmap? = null) {
         val tamanho = modelos.size
         if (tamanho <= 0) return
 
@@ -334,9 +369,10 @@ object Rota {
                 alvo--
             } else {
                 direcaoIda = true
-                alvo = 1
+                alvo = 1.coerceAtMost(tamanho - 1)
             }
         }
+        registrarLogAlvo(context, tela)
 
         fase = FaseNavegacao.ESCOLHER
         ultimoClique = 0L
@@ -377,7 +413,9 @@ object Rota {
         rgbVerde: Triple<Int, Int, Int>?,
         distPx: Float,
         progressoAntesReset: Int,
-        motivo: String
+        motivo: String,
+        context: Context? = null,
+        tela: Bitmap? = null
     ): String {
         falhasPino++
         if (falhasPino >= Cal.MAX_FALHAS_PINO) {
@@ -385,7 +423,7 @@ object Rota {
                 faseNome, pinoId, score, qtdVerde, rgbVerde, distPx, progressoAntesReset,
                 "$motivo (falhas=$falhasPino -> proximo pino)"
             )
-            proximoPino(agora)
+            proximoPino(agora, context, tela)
             return logAvanco
         }
 
@@ -438,32 +476,170 @@ object Rota {
         return pixelsTextoClaro in 40..650
     }
 
-    private fun executarAutoloot(larguraTela: Int, alturaTela: Int) {
-        SystemClock.sleep(1000L)
+    @Volatile
+    var intervaloLootMs: Long = 100L
 
-        for (ponto in Cal.PONTOS_CORPO) {
+    @Volatile
+    var maxAutolootMs: Long = 40000L
+
+    private fun esperarFatiado(
+        totalMs: Long,
+        inicioMs: Long,
+        context: Context,
+        tela: Bitmap,
+        cliquesCount: Int
+    ): Boolean {
+        var restante = totalMs
+        while (restante > 0L) {
+            if (cancelarAutoloot) {
+                val durSeg = (SystemClock.uptimeMillis() - inicioMs) / 1000L
+                LogRota.registrarPasso(
+                    context,
+                    "AUTOLOOT fim ${durSeg}s cliques=$cliquesCount cancelado=sim",
+                    tela
+                )
+                return false
+            }
+            if (SystemClock.uptimeMillis() - inicioMs >= maxAutolootMs) {
+                LogRota.registrarPasso(context, "AUTOLOOT limite de tempo", tela)
+                val durSeg = (SystemClock.uptimeMillis() - inicioMs) / 1000L
+                LogRota.registrarPasso(
+                    context,
+                    "AUTOLOOT fim ${durSeg}s cliques=$cliquesCount cancelado=nao",
+                    tela
+                )
+                return false
+            }
+            val passoEspera = restante.coerceAtMost(50L)
+            SystemClock.sleep(passoEspera)
+            restante -= passoEspera
+        }
+        if (cancelarAutoloot) {
+            val durSeg = (SystemClock.uptimeMillis() - inicioMs) / 1000L
+            LogRota.registrarPasso(
+                context,
+                "AUTOLOOT fim ${durSeg}s cliques=$cliquesCount cancelado=sim",
+                tela
+            )
+            return false
+        }
+        if (SystemClock.uptimeMillis() - inicioMs >= maxAutolootMs) {
+            LogRota.registrarPasso(context, "AUTOLOOT limite de tempo", tela)
+            val durSeg = (SystemClock.uptimeMillis() - inicioMs) / 1000L
+            LogRota.registrarPasso(
+                context,
+                "AUTOLOOT fim ${durSeg}s cliques=$cliquesCount cancelado=nao",
+                tela
+            )
+            return false
+        }
+        return true
+    }
+
+    private fun executarAutoloot(larguraTela: Int, alturaTela: Int, context: Context, tela: Bitmap) {
+        val inicioMs = SystemClock.uptimeMillis()
+        var cliquesCount = 0
+        LogRota.registrarPasso(context, "AUTOLOOT inicio", tela)
+
+        if (!esperarFatiado(1000L, inicioMs, context, tela, cliquesCount)) return
+
+        val totalCorpo = Cal.PONTOS_CORPO.size
+        for ((idx, ponto) in Cal.PONTOS_CORPO.withIndex()) {
+            if (cancelarAutoloot) {
+                val durSeg = (SystemClock.uptimeMillis() - inicioMs) / 1000L
+                LogRota.registrarPasso(
+                    context,
+                    "AUTOLOOT fim ${durSeg}s cliques=$cliquesCount cancelado=sim",
+                    tela
+                )
+                return
+            }
+            if (SystemClock.uptimeMillis() - inicioMs >= maxAutolootMs) {
+                LogRota.registrarPasso(context, "AUTOLOOT limite de tempo", tela)
+                val durSeg = (SystemClock.uptimeMillis() - inicioMs) / 1000L
+                LogRota.registrarPasso(
+                    context,
+                    "AUTOLOOT fim ${durSeg}s cliques=$cliquesCount cancelado=nao",
+                    tela
+                )
+                return
+            }
+
             val px = ponto.first * larguraTela
             val py = ponto.second * alturaTela
 
             ToqueService.clicar(px, py, 30L)
-            SystemClock.sleep(60L)
+            cliquesCount++
+            if (!esperarFatiado(60L, inicioMs, context, tela, cliquesCount)) return
+
+            if (cancelarAutoloot) {
+                val durSeg = (SystemClock.uptimeMillis() - inicioMs) / 1000L
+                LogRota.registrarPasso(
+                    context,
+                    "AUTOLOOT fim ${durSeg}s cliques=$cliquesCount cancelado=sim",
+                    tela
+                )
+                return
+            }
             ToqueService.clicar(px, py, 30L)
-            SystemClock.sleep(100L)
+            cliquesCount++
+            LogRota.registrarPasso(
+                context,
+                "AUTOLOOT corpo ${idx + 1}/$totalCorpo ${px.toInt()},${py.toInt()}",
+                tela
+            )
+
+            if (!esperarFatiado(intervaloLootMs, inicioMs, context, tela, cliquesCount)) return
         }
 
-        SystemClock.sleep(250L)
+        if (!esperarFatiado(250L, inicioMs, context, tela, cliquesCount)) return
 
-        for (ponto in Cal.PONTOS_LOOT) {
+        val totalLoot = Cal.PONTOS_LOOT.size
+        for ((pIdx, ponto) in Cal.PONTOS_LOOT.withIndex()) {
             val lx = ponto.first * larguraTela
             val ly = ponto.second * alturaTela
 
-            repeat(4) {
+            for (rep in 1..4) {
+                if (cancelarAutoloot) {
+                    val durSeg = (SystemClock.uptimeMillis() - inicioMs) / 1000L
+                    LogRota.registrarPasso(
+                        context,
+                        "AUTOLOOT fim ${durSeg}s cliques=$cliquesCount cancelado=sim",
+                        tela
+                    )
+                    return
+                }
+                if (SystemClock.uptimeMillis() - inicioMs >= maxAutolootMs) {
+                    LogRota.registrarPasso(context, "AUTOLOOT limite de tempo", tela)
+                    val durSeg = (SystemClock.uptimeMillis() - inicioMs) / 1000L
+                    LogRota.registrarPasso(
+                        context,
+                        "AUTOLOOT fim ${durSeg}s cliques=$cliquesCount cancelado=nao",
+                        tela
+                    )
+                    return
+                }
                 ToqueService.clicar(lx, ly, 30L)
-                SystemClock.sleep(100L)
+                cliquesCount++
+                if (!esperarFatiado(intervaloLootMs, inicioMs, context, tela, cliquesCount)) return
             }
 
-            SystemClock.sleep(100L)
+            LogRota.registrarPasso(
+                context,
+                "AUTOLOOT loot ponto ${pIdx + 1}/$totalLoot",
+                tela
+            )
+
+            if (!esperarFatiado(intervaloLootMs, inicioMs, context, tela, cliquesCount)) return
         }
+
+        autoloots++
+        val durSeg = (SystemClock.uptimeMillis() - inicioMs) / 1000L
+        LogRota.registrarPasso(
+            context,
+            "AUTOLOOT fim ${durSeg}s cliques=$cliquesCount cancelado=nao",
+            tela
+        )
     }
 
     private fun formatarLog(
@@ -506,6 +682,7 @@ object Rota {
             return "Aguardando o jogo em paisagem"
         }
         val agora = SystemClock.uptimeMillis()
+        val limiteSeg = (limiteAlarmeMs / 1000L).coerceAtLeast(1L)
         if (temMonstro(tela)) {
             quadrosSemMonstroAlarme = 0
             if (presencaDesde == 0L) {
@@ -513,13 +690,13 @@ object Rota {
             }
             val decorridoMs = agora - presencaDesde
             val segundos = decorridoMs / 1000L
-            return if (decorridoMs >= 15000L) {
+            return if (decorridoMs >= limiteAlarmeMs) {
                 BotService.tocarAlarme(context, uriSom, volume)
                 val msg = "ALARME: batalha há ${segundos}s"
                 registrarLogMudancaAlarme(2, msg, agora, context, tela)
                 msg
             } else {
-                val msg = "Batalha: ${segundos}s de 15s"
+                val msg = "Batalha: ${segundos}s de ${limiteSeg}s"
                 registrarLogMudancaAlarme(1, msg, agora, context, tela)
                 msg
             }
@@ -553,7 +730,7 @@ object Rota {
     ): String {
         if (!versaoRegistradaNoLog) {
             versaoRegistradaNoLog = true
-            val linhaVersao = "VERSAO Rota 1.4 | LIMIAR=${"%.2f".format(Cal.LIMIAR)} | LIMIAR_VERDE=${"%.2f".format(Cal.LIMIAR_VERDE)} | MARGEM_VERDE=${"%.2f".format(Cal.MARGEM_VERDE)} | INTERVALO_CLIQUE=${Cal.INTERVALO_CLIQUE} | tela=${tela.width}x${tela.height}"
+            val linhaVersao = "VERSAO Rota 1.5.1 | LIMIAR=${"%.2f".format(Cal.LIMIAR)} | LIMIAR_VERDE=${"%.2f".format(Cal.LIMIAR_VERDE)} | MARGEM_VERDE=${"%.2f".format(Cal.MARGEM_VERDE)} | INTERVALO_CLIQUE=${intervaloCliqueMs} | tela=${tela.width}x${tela.height}"
             LogRota.registrarPasso(context, linhaVersao, tela)
         }
         val texto = passoInterno(tela, context, usaLoot, usaAlerta, uriSom, volume, tocar)
@@ -607,32 +784,23 @@ object Rota {
                 tempoInicioLuta = agora
                 estavaEmLutaCaminhando = (fase == FaseNavegacao.CAMINHANDO)
                 verdeRelAntesDaLuta = ultimoVerdeRel
-            } else {
-                val duracaoLuta = agora - tempoInicioLuta
-                if (duracaoLuta >= Cal.MAX_LUTA_MS) {
-                    if (usaAlerta) {
-                        BotService.tocarAlarme(context, uriSom, volume)
-                    }
-                    estavaEmLuta = false
-                    tempoInicioLuta = 0L
-                    estavaEmLutaCaminhando = false
-                    verdeRelAntesDaLuta = null
-                    quadrosMonstro = 0
-                    ignorarLutaAte = agora + Cal.IGNORAR_LUTA_MS
-                    val pinoAtual = if (alvo in modelos.indices) modelos[alvo].indice else 0
-                    return registrarFalhaPino(
-                        agora, fase.name, pinoAtual, melhorScore,
-                        ultimoQtdVerde, ultimoRgbVerde, ultimaDistVerde, semProgresso,
-                        "luta excedeu limite"
-                    )
-                }
-                if (usaAlerta && duracaoLuta >= 15000L) {
-                    BotService.tocarAlarme(context, uriSom, volume)
-                    return "ALERTA: Batalha > 15s (Player?)"
-                }
+                estadoLogLutaAlarme = 0
             }
 
-            return "LUTA (pausado)"
+            val duracaoLuta = agora - tempoInicioLuta
+            val segsLuta = duracaoLuta / 1000L
+            if (usaAlerta && duracaoLuta >= limiteAlarmeMs) {
+                BotService.tocarAlarme(context, uriSom, volume)
+                val msgAlarme = "ALARME: batalha há ${segsLuta}s"
+                if (estadoLogLutaAlarme != 1 && agora - ultimoLogLutaAlarmeEm >= 1000L) {
+                    estadoLogLutaAlarme = 1
+                    ultimoLogLutaAlarmeEm = agora
+                    LogRota.registrarPasso(context, msgAlarme, tela)
+                }
+                return msgAlarme
+            }
+
+            return "LUTA ${segsLuta}s (pausado)"
         }
 
         if (agoraLuta >= ignorarLutaAte) {
@@ -641,9 +809,19 @@ object Rota {
 
         if (estavaEmLuta) {
             val agora = SystemClock.uptimeMillis()
+            val duracaoTotalSeg = if (tempoInicioLuta > 0L) (agora - tempoInicioLuta) / 1000L else 0L
             val veioDeCaminhando = estavaEmLutaCaminhando
             val refVerde = verdeRelAntesDaLuta
 
+            if (estadoLogLutaAlarme == 1 && agora - ultimoLogLutaAlarmeEm >= 1000L) {
+                estadoLogLutaAlarme = 0
+                ultimoLogLutaAlarmeEm = agora
+                LogRota.registrarPasso(context, "Alarme de luta encerrado após ${duracaoTotalSeg}s", tela)
+            } else {
+                estadoLogLutaAlarme = 0
+            }
+
+            lutas++
             estavaEmLuta = false
             tempoInicioLuta = 0L
             estavaEmLutaCaminhando = false
@@ -651,7 +829,7 @@ object Rota {
             quadrosMonstro = 0
 
             if (usaLoot) {
-                executarAutoloot(tela.width, tela.height)
+                executarAutoloot(tela.width, tela.height, context, tela)
             }
 
             fimLutaEm = SystemClock.uptimeMillis()
@@ -782,7 +960,8 @@ object Rota {
                                 "verde sem template - reescolhendo"
                             )
                         }
-                        proximoPino(agora)
+                        ultimoConfirmado = alvo
+                        proximoPino(agora, context, tela)
                         return formatarLog(
                             "CHEGOU", indice, melhorScore, qtdVerde, rgbVerde, dist, semProgresso
                         )
@@ -795,7 +974,7 @@ object Rota {
                 quadrosChegada = 0
                 var logClique: String? = null
 
-                if (agora - ultimoClique >= Cal.INTERVALO_CLIQUE) {
+                if (agora - ultimoClique >= intervaloCliqueMs) {
                     val anteriorDist = ultimaDist
                     if (anteriorDist >= 0f && dist >= anteriorDist - tela.width * 0.003f) semProgresso++ else {
                         semProgresso = 0
@@ -803,7 +982,8 @@ object Rota {
                     }
                     ultimaDist = dist
                     if (semProgresso >= 3 && anteriorDist >= 0f && abs(dist - anteriorDist) < 3f && dist <= toleranciaChegada * 1.2f) {
-                        proximoPino(agora)
+                        ultimoConfirmado = alvo
+                        proximoPino(agora, context, tela)
                         return formatarLog("CHEGOU", indice, melhorScore, qtdVerde, rgbVerde, dist, semProgresso, "chegada por parada")
                     }
                     val offsets = arrayOf(Pair(8f,0f),Pair(-8f,0f),Pair(0f,8f),Pair(0f,-8f),Pair(10f,6f),Pair(-10f,-6f),Pair(6f,-10f),Pair(-6f,10f))
@@ -865,7 +1045,8 @@ object Rota {
                             "sob a cruz (verde sem template - reescolhendo)"
                         )
                     }
-                    proximoPino(agora)
+                    ultimoConfirmado = alvo
+                    proximoPino(agora, context, tela)
                     return formatarLog(
                         "CHEGOU", indice, melhorScore, 0, rgbRef, distRefAtual, semProgresso, "sob a cruz"
                     )
@@ -900,7 +1081,7 @@ object Rota {
                     "rival=nenhum"
                 }
                 val distVerde = hypot(((x0 + verde.posicao.first) - cx).toDouble(), ((y0 + verde.posicao.second) - cy).toDouble()).toFloat()
-                if (distVerde > toleranciaChegada && agora - ultimoClique >= Cal.INTERVALO_CLIQUE) {
+                if (distVerde > toleranciaChegada && agora - ultimoClique >= intervaloCliqueMs) {
                     val px = (x0 + verde.posicao.first).toFloat().coerceIn(minToqueX, maxToqueX)
                     val py = (y0 + verde.posicao.second).toFloat().coerceIn(minToqueY, maxToqueY)
                     val toque = dispararToqueSeguro(tela.width, tela.height, px, py, tocar)
@@ -950,7 +1131,7 @@ object Rota {
                 ultimoCandidatoQuaseLimiar = null
                 candidatoConsistente = null
                 val distFb = hypot((candidatoPos.first - cx).toDouble(), (candidatoPos.second - cy).toDouble()).toFloat()
-                if (distFb > toleranciaChegada && agora - ultimoClique >= Cal.INTERVALO_CLIQUE) {
+                if (distFb > toleranciaChegada && agora - ultimoClique >= intervaloCliqueMs) {
                     val px = candidatoPos.first.toFloat().coerceIn(minToqueX, maxToqueX)
                     val py = candidatoPos.second.toFloat().coerceIn(minToqueY, maxToqueY)
                     val toque = dispararToqueSeguro(
@@ -976,7 +1157,7 @@ object Rota {
                         ((x0 + verdeRel.first) - cx).toDouble(),
                         ((y0 + verdeRel.second) - cy).toDouble()
                     ).toFloat()
-                    if (distVerde > toleranciaChegada && agora - ultimoClique >= Cal.INTERVALO_CLIQUE) {
+                    if (distVerde > toleranciaChegada && agora - ultimoClique >= intervaloCliqueMs) {
                         val px = (x0 + verdeRel.first).toFloat().coerceIn(minToqueX, maxToqueX)
                         val py = (y0 + verdeRel.second).toFloat().coerceIn(minToqueY, maxToqueY)
                         val toque = dispararToqueSeguro(
@@ -999,10 +1180,23 @@ object Rota {
 
             naoVisto++
             if (naoVisto >= Cal.NAO_VISTO_LIMITE) {
+                val resyncLog = tentarResyncPino(tela, x0, y0, x1, y1, cx, cy, toleranciaChegada, agora, context)
                 naoVisto = 0
+                if (resyncLog != null) {
+                    return formatarLog(
+                        fase.name,
+                        if (alvo in modelos.indices) modelos[alvo].indice else indice,
+                        melhorScore,
+                        0,
+                        ultimoRgbVerde,
+                        -1f,
+                        semProgresso,
+                        resyncLog
+                    )
+                }
                 return registrarFalhaPino(
                     agora, fase.name, indice, scoreAtual, 0, ultimoRgbVerde,
-                    -1f, semProgresso, "nao localizado | $rivalLog"
+                    -1f, semProgresso, "nao localizado | $rivalLog", context, tela
                 )
             }
             return formatarLog(
@@ -1019,7 +1213,8 @@ object Rota {
         if (dist <= toleranciaChegada) {
             quadrosPertoDaCruz++
             if (quadrosPertoDaCruz >= 3) {
-                proximoPino(agora)
+                ultimoConfirmado = alvo
+                proximoPino(agora, context, tela)
                 return formatarLog(
                     "CHEGOU", indice, scoreAtual, 0, ultimoRgbVerde, dist, semProgresso, "perto da cruz | $rivalLog"
                 )
@@ -1032,7 +1227,7 @@ object Rota {
         quadrosPertoDaCruz = 0
 
         var logClique: String? = null
-        if (agora - ultimoClique >= Cal.INTERVALO_CLIQUE) {
+        if (agora - ultimoClique >= intervaloCliqueMs) {
             val px = achado.first.toFloat().coerceIn(minToqueX, maxToqueX)
             val py = achado.second.toFloat().coerceIn(minToqueY, maxToqueY)
             val toque = dispararToqueSeguro(
@@ -1049,6 +1244,100 @@ object Rota {
         return formatarLog(
             fase.name, indice, scoreAtual, 0, ultimoRgbVerde, dist, semProgresso, extra
         )
+    }
+
+    private fun tentarResyncPino(
+        tela: Bitmap,
+        x0: Int,
+        y0: Int,
+        x1: Int,
+        y1: Int,
+        cx: Float,
+        cy: Float,
+        toleranciaChegada: Float,
+        agora: Long,
+        context: Context
+    ): String? {
+        val refIdx = ultimoConfirmado ?: return null
+        if (modelos.isEmpty() || refIdx !in modelos.indices) return null
+
+        while (timestampsResync.isNotEmpty() && agora - timestampsResync.first() > 60000L) {
+            timestampsResync.removeFirst()
+        }
+        if (timestampsResync.size >= 2) {
+            return null
+        }
+
+        val tamanho = modelos.size
+        val esperadoIdx: Int? = if (tamanho <= 1) {
+            0
+        } else if (direcaoIda) {
+            if (refIdx < tamanho - 1) refIdx + 1 else (refIdx - 1).coerceAtLeast(0)
+        } else {
+            if (refIdx > 0) refIdx - 1 else (refIdx + 1).coerceAtMost(tamanho - 1)
+        }
+
+        fun avaliarCandidato(idxCandidato: Int?): Pair<Boolean, Float>? {
+            if (idxCandidato == null || idxCandidato !in modelos.indices) return null
+            val pos = acharPorTemplate(tela, x0, y0, x1, y1, modelos[idxCandidato], cx, cy) ?: return null
+            if (melhorScore < Cal.LIMIAR.toDouble()) return null
+            val dist = hypot((pos.first - cx).toDouble(), (pos.second - cy).toDouble()).toFloat()
+            if (dist <= toleranciaChegada) return null
+            return Pair(true, dist)
+        }
+
+        val resEsperado = avaliarCandidato(esperadoIdx)
+        val escolhidoIdx: Int? = if (resEsperado != null) {
+            esperadoIdx
+        } else {
+            val vizinhos = ArrayList<Int>()
+            if (esperadoIdx != null && esperadoIdx != refIdx) vizinhos.add(esperadoIdx)
+            val outroVizinho = if (direcaoIda) refIdx - 1 else refIdx + 1
+            if (outroVizinho in modelos.indices && outroVizinho != esperadoIdx && outroVizinho != refIdx) {
+                vizinhos.add(outroVizinho)
+            }
+            var achadoVizinho: Int? = null
+            for (vIdx in vizinhos) {
+                if (avaliarCandidato(vIdx) != null) {
+                    achadoVizinho = vIdx
+                    break
+                }
+            }
+            if (achadoVizinho != null) {
+                achadoVizinho
+            } else if (avaliarCandidato(refIdx) != null) {
+                refIdx
+            } else {
+                null
+            }
+        }
+
+        if (escolhidoIdx == null || escolhidoIdx !in modelos.indices) return null
+        if (abs(escolhidoIdx - refIdx) > 1) return null
+        if (escolhidoIdx == alvo) return null
+
+        val idAntigo = if (alvo in modelos.indices) modelos[alvo].indice else alvo
+        val idNovo = modelos[escolhidoIdx].indice
+        alvo = escolhidoIdx
+        falhasPino = 0
+        naoVisto = 0
+        semProgresso = 0
+        cliquesVerde = 0
+        quadrosChegada = 0
+        quadrosSumidoVerde = 0
+        quadrosPertoDaCruz = 0
+        ultimaDist = -1f
+        ultimaDistVerde = -1f
+        menorDistVerde = -1f
+        ultimoVerdeRel = null
+        vistoVerde = false
+        retomarVerdeAte = 0L
+        verdeVeioDeTemplate = false
+        fase = FaseNavegacao.ESCOLHER
+        timestampsResync.addLast(agora)
+
+        registrarLogAlvo(context, tela)
+        return "RESYNC alvo $idAntigo->$idNovo"
     }
 
     private fun regiaoQuasePreta(pixels: IntArray, largura: Int, x: Int, y: Int, w: Int, h: Int): Boolean {
