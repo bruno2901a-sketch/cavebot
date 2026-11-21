@@ -49,6 +49,10 @@ class BotService : Service() {
         const val EXTRA_SO_ALARME = "so_alarme"
         const val EXTRA_VOLUME = "volume"
         const val EXTRA_URI_SOM = "uri_som"
+        const val EXTRA_ALARME_S = "alarme_s"
+        const val EXTRA_LOOT_MS = "loot_ms"
+        const val EXTRA_LOOT_MAX_S = "loot_max_s"
+        const val EXTRA_PINO_MS = "pino_ms"
 
         private const val CANAL = "rotabot_rota"
         private const val NOTIFICACAO_ID = 71
@@ -100,6 +104,8 @@ class BotService : Service() {
     @Volatile private var imageReader: ImageReader? = null
     private var overlay: LinearLayout? = null
     private var statusView: TextView? = null
+    private var contadorView: TextView? = null
+    @Volatile private var alarmeSegAtual = 30
     @Volatile private var statusAtual = "Aguardando início"
     @Volatile private var rodando = false
     @Volatile private var rotaIniciada = false
@@ -143,9 +149,18 @@ class BotService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACAO_INICIAR -> iniciar(intent)
-            ACAO_PAUSAR -> { pausaManual = true }
-            ACAO_RETOMAR -> { pausaManual = false }
-            ACAO_PARAR -> pararTudo("Encerrado.")
+            ACAO_PAUSAR -> {
+                pausaManual = true
+                Rota.cancelarAutoloot = true
+            }
+            ACAO_RETOMAR -> {
+                Rota.cancelarAutoloot = false
+                pausaManual = false
+            }
+            ACAO_PARAR -> {
+                Rota.cancelarAutoloot = true
+                pararTudo("Encerrado.")
+            }
         }
         return START_NOT_STICKY
     }
@@ -168,6 +183,18 @@ class BotService : Service() {
         soAlarme = intent.getBooleanExtra(EXTRA_SO_ALARME, false)
         volumeAlerta = intent.getIntExtra(EXTRA_VOLUME, 80)
         uriSomAlerta = intent.getStringExtra(EXTRA_URI_SOM) ?: ""
+
+        val alarmeS = intent.getIntExtra(EXTRA_ALARME_S, 30).coerceIn(5, 300)
+        val lootMs = intent.getIntExtra(EXTRA_LOOT_MS, 100).coerceIn(30, 500)
+        val lootMaxS = intent.getIntExtra(EXTRA_LOOT_MAX_S, 40).coerceIn(5, 120)
+        val pinoMs = intent.getIntExtra(EXTRA_PINO_MS, 700).coerceIn(300, 2000)
+
+        alarmeSegAtual = alarmeS
+        Rota.limiteAlarmeMs = alarmeS * 1000L
+        Rota.intervaloLootMs = lootMs.toLong()
+        Rota.maxAutolootMs = lootMaxS * 1000L
+        Rota.intervaloCliqueMs = pinoMs.toLong()
+        Rota.cancelarAutoloot = false
 
         val resultCode = intent.getIntExtra(EXTRA_RESULTADO, 0)
         val data = if (Build.VERSION.SDK_INT >= 33) {
@@ -303,10 +330,62 @@ class BotService : Service() {
         if (!aceito) { processando = false }
     }
 
+    private fun extrairNumeroPino(texto: String): String {
+        val match = Regex("pino=(\\d+)").find(texto)
+        if (match != null) return match.groupValues[1]
+        val matchPinoEspaco = Regex("\\bpino\\s+(\\d+)\\b", RegexOption.IGNORE_CASE).find(texto)
+        if (matchPinoEspaco != null) return matchPinoEspaco.groupValues[1]
+        return "?"
+    }
+
+    private fun statusCurto(texto: String): String {
+        val limpa = texto.substringBefore(" | ").trim()
+        if (limpa == "Pausado") return "Pausado"
+        if (limpa.startsWith("RESYNC", ignoreCase = true)) return "Reajustando pino"
+        if (limpa.startsWith("AUTOLOOT", ignoreCase = true)) return "Pegando loot"
+        if (limpa.startsWith("ALARME", ignoreCase = true)) {
+            val segMatch = Regex("há\\s+(\\d+s)", RegexOption.IGNORE_CASE).find(limpa)
+            val segStr = segMatch?.groupValues?.get(1) ?: ""
+            return if (segStr.isNotEmpty()) "ALARME $segStr" else "ALARME"
+        }
+        val lutaMatch = Regex("^LUTA\\s+(\\d+s)", RegexOption.IGNORE_CASE).find(limpa)
+        if (lutaMatch != null) {
+            return "Luta ${lutaMatch.groupValues[1]}"
+        }
+        if (limpa.contains("nao localizado", ignoreCase = true)) {
+            val p = extrairNumeroPino(texto)
+            return "Pino $p não achado"
+        }
+        if (limpa.startsWith("fase=CHEGOU", ignoreCase = true)) {
+            val p = extrairNumeroPino(texto)
+            return "Chegou ao pino $p"
+        }
+        if (limpa.startsWith("fase=CAMINHANDO", ignoreCase = true)) {
+            val p = extrairNumeroPino(texto)
+            return "Indo ao pino $p"
+        }
+        if (limpa.startsWith("fase=ESCOLHER", ignoreCase = true)) {
+            val p = extrairNumeroPino(texto)
+            return "Procurando pino $p"
+        }
+        if (limpa.contains("procurando", ignoreCase = true)) {
+            val p = extrairNumeroPino(texto)
+            return "Procurando pino $p"
+        }
+        return if (limpa.length > 40) limpa.take(40) else limpa
+    }
+
+    private fun atualizarContadoresOverlay() {
+        val textoContadores = "Lutas ${Rota.lutas} | Loots ${Rota.autoloots} | Alarme ${alarmeSegAtual}s"
+        handler.post { contadorView?.text = textoContadores }
+    }
+
     private fun registrarStatus(msg: String) {
+        atualizarContadoresOverlay()
         if (statusAtual == msg) return
         statusAtual = msg
-        handler.post { statusView?.text = msg }
+        val curto = statusCurto(msg)
+        handler.post { statusView?.text = "✥ $curto" }
     }
 
     private fun criarOverlay() {
@@ -314,18 +393,30 @@ class BotService : Service() {
             val wm = getSystemService(WINDOW_SERVICE) as WindowManager
             val painel = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
-                setPadding(16, 12, 16, 12)
+                setPadding(10, 6, 10, 6)
                 setBackgroundColor(Color.argb(230, 25, 25, 25))
             }
             overlay = painel
 
             statusView = TextView(this).apply {
-                text = "✥ $statusAtual"
+                text = "✥ ${statusCurto(statusAtual)}"
                 setTextColor(Color.WHITE)
-                textSize = 12f
-                setPadding(8, 6, 8, 10)
+                textSize = 11f
+                maxLines = 2
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(4, 2, 4, 2)
             }
             painel.addView(statusView)
+
+            contadorView = TextView(this).apply {
+                text = "Lutas ${Rota.lutas} | Loots ${Rota.autoloots} | Alarme ${alarmeSegAtual}s"
+                setTextColor(Color.LTGRAY)
+                textSize = 10f
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setPadding(4, 0, 4, 4)
+            }
+            painel.addView(contadorView)
 
             val linha = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             val btnIniciarPausar = Button(this).apply {
@@ -333,6 +424,7 @@ class BotService : Service() {
                 setOnClickListener {
                     if (!rotaIniciada) {
                         Rota.resetar()
+                        Rota.cancelarAutoloot = false
                         val agoraInicio = SystemClock.uptimeMillis()
                         ultimoFrameEm = agoraInicio
                         ultimaRecriacaoCapturaEm = 0L
@@ -340,10 +432,19 @@ class BotService : Service() {
                         rodando = true
                         pausaManual = false
                         text = "Pausar"
+                        atualizarContadoresOverlay()
                         workerHandler.post(ciclo)
                     } else {
-                        pausaManual = !pausaManual
+                        val novaPausa = !pausaManual
+                        if (novaPausa) {
+                            Rota.cancelarAutoloot = true
+                            pausaManual = true
+                        } else {
+                            Rota.cancelarAutoloot = false
+                            pausaManual = false
+                        }
                         text = if (pausaManual) "Retomar" else "Pausar"
+                        atualizarContadoresOverlay()
                     }
                 }
             }
@@ -421,6 +522,7 @@ class BotService : Service() {
     }
 
     private fun pararTudo(motivo: String) {
+        Rota.cancelarAutoloot = true
         rodando = false
         rotaIniciada = false
         liberarCaptura()
@@ -442,6 +544,7 @@ class BotService : Service() {
     }
 
     override fun onDestroy() {
+        Rota.cancelarAutoloot = true
         pararAlarme()
         pararTudo("Destruído.")
         workerThread.quitSafely()
