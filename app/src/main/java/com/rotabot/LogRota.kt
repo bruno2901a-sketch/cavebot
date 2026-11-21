@@ -20,7 +20,7 @@ import java.util.concurrent.Executors
 object LogRota {
     private const val TAG = "LogRota"
     private const val NOME_LOG = "rotabot_log.txt"
-    private const val MAX_BYTES_LOG = 2L * 1024L * 1024L
+    private const val MAX_BYTES_LOG = 25L * 1024L * 1024L
     private const val MAX_IMAGENS_FALHA = 30
     private const val MAX_IMAGENS_EXPORT = 10
 
@@ -87,7 +87,8 @@ object LogRota {
             msg.contains("sem progresso") ||
             msg.contains("verde sumiu") ||
             msg.contains("nao localizado") ||
-            msg.contains("luta excedeu limite")
+            msg.contains("luta excedeu limite") ||
+            msg.startsWith("AUTOLOOT")
     }
 
     private fun motivoFalha(msg: String): String? {
@@ -243,6 +244,162 @@ object LogRota {
                 }
             } catch (ex: Exception) {
                 Log.e(TAG, "Erro ao exportar log e imagens", ex)
+                mainHandler.post {
+                    Toast.makeText(context, "Erro ao exportar log: ${ex.message}", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
+    private fun parsearHoraMs(linha: String): Long? {
+        if (!linha.startsWith("[") || linha.length < 13) return null
+        val fimIdx = linha.indexOf(']')
+        if (fimIdx < 9) return null
+        val horaStr = linha.substring(1, fimIdx).trim()
+        val partes = horaStr.split(":")
+        if (partes.size != 3) return null
+        val h = partes[0].toIntOrNull() ?: return null
+        val m = partes[1].toIntOrNull() ?: return null
+        val secPartes = partes[2].split(".")
+        val s = secPartes[0].toIntOrNull() ?: return null
+        val ms = if (secPartes.size > 1) secPartes[1].padEnd(3, '0').take(3).toIntOrNull() ?: 0 else 0
+        if (h !in 0..23 || m !in 0..59 || s !in 0..59 || ms !in 0..999) return null
+        return ((h * 3600L + m * 60L + s) * 1000L) + ms
+    }
+
+    private fun dentroJanela15Min(msLinha: Long, msReferencia: Long): Boolean {
+        val janelaMs = 15L * 60L * 1000L
+        val diaMs = 24L * 3600L * 1000L
+        var diff = msReferencia - msLinha
+        if (diff < 0L) {
+            diff += diaMs
+        }
+        return diff in 0L..janelaMs
+    }
+
+    fun exportarUltimos15Min(context: Context) {
+        val ctx = context.applicationContext
+        appContext = ctx
+        executor.execute {
+            val baseDir = diretorioBase(ctx)
+            val arquivoAtual = File(baseDir, NOME_LOG)
+            val arquivoAntigo = File(baseDir, "rotabot_log_antigo.txt")
+            val pastaFalhas = diretorioFalhas(ctx)
+            val imagensRecentes = pastaFalhas.listFiles()
+                ?.filter { it.isFile }
+                ?.sortedByDescending { it.lastModified() }
+                ?.take(MAX_IMAGENS_EXPORT)
+                ?: emptyList()
+
+            val arquivosLog = listOf(arquivoAntigo, arquivoAtual).filter { it.exists() && it.length() > 0L }
+            if (arquivosLog.isEmpty()) {
+                mainHandler.post {
+                    Toast.makeText(context, "Log vazio", Toast.LENGTH_SHORT).show()
+                }
+                return@execute
+            }
+
+            // Passada 1: ler antigo e depois atual linha a linha, sem guardar linhas, guardando a hora (ms) da ultima linha valida
+            var msReferencia: Long? = null
+            for (arq in arquivosLog) {
+                try {
+                    arq.bufferedReader(Charsets.UTF_8).useLines { seq ->
+                        seq.forEach { linha ->
+                            val parsed = parsearHoraMs(linha)
+                            if (parsed != null) {
+                                msReferencia = parsed
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+
+            if (msReferencia == null) {
+                val agoraFmt = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
+                msReferencia = parsearHoraMs("[$agoraFmt]") ?: 0L
+            }
+
+            val refMs = msReferencia!!
+
+            try {
+                val arq15 = File(baseDir, "rotabot_log_ultimos15min.txt")
+                var linhasEscritas = 0
+
+                // Passada 2: ler novamente linha a linha e escrever direto via BufferedWriter
+                arq15.bufferedWriter(Charsets.UTF_8).use { writer ->
+                    var blocoAtualDentro = false
+                    for (arq in arquivosLog) {
+                        try {
+                            arq.bufferedReader(Charsets.UTF_8).useLines { seq ->
+                                seq.forEach { linha ->
+                                    val msLinha = parsearHoraMs(linha)
+                                    if (msLinha != null) {
+                                        blocoAtualDentro = dentroJanela15Min(msLinha, refMs)
+                                        if (blocoAtualDentro) {
+                                            writer.write(linha)
+                                            writer.newLine()
+                                            linhasEscritas++
+                                        }
+                                    } else if (blocoAtualDentro) {
+                                        writer.write(linha)
+                                        writer.newLine()
+                                        linhasEscritas++
+                                    }
+                                }
+                            }
+                        } catch (_: Exception) {}
+                    }
+                    writer.flush()
+                }
+
+                if (linhasEscritas == 0) {
+                    if (arq15.exists()) {
+                        arq15.delete()
+                    }
+                    mainHandler.post {
+                        Toast.makeText(context, "Sem registros nos últimos 15 min", Toast.LENGTH_SHORT).show()
+                    }
+                    return@execute
+                }
+
+                val authority = "${ctx.packageName}.fileprovider"
+                val uris = ArrayList<Uri>()
+                uris.add(FileProvider.getUriForFile(ctx, authority, arq15))
+                for (img in imagensRecentes) {
+                    uris.add(FileProvider.getUriForFile(ctx, authority, img))
+                }
+
+                val intent = if (uris.size > 1) {
+                    Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                        type = "*/*"
+                        putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+                        val clip = ClipData.newUri(ctx.contentResolver, "RotaBot Export 15min", uris.first())
+                        for (i in 1 until uris.size) {
+                            clip.addItem(ClipData.Item(uris[i]))
+                        }
+                        clipData = clip
+                    }
+                } else {
+                    val singleUri = uris.first()
+                    Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_STREAM, singleUri)
+                        clipData = ClipData.newUri(ctx.contentResolver, "RotaBot Log 15min", singleUri)
+                    }
+                }.apply {
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+
+                val chooser = Intent.createChooser(intent, "Exportar últimos 15 min RotaBot").apply {
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                mainHandler.post {
+                    context.startActivity(chooser)
+                }
+            } catch (ex: Exception) {
+                Log.e(TAG, "Erro ao exportar últimos 15 min", ex)
                 mainHandler.post {
                     Toast.makeText(context, "Erro ao exportar log: ${ex.message}", Toast.LENGTH_SHORT).show()
                 }
