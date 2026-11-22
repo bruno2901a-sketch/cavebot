@@ -14,6 +14,7 @@ import android.widget.Button
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
@@ -247,7 +248,11 @@ class MainActivity : Activity() {
         tela.addView(exportar15Min)
         tela.addView(limparLog)
 
-        setContentView(tela)
+        val rolagem = ScrollView(this).apply {
+            isFillViewport = true
+            addView(tela)
+        }
+        setContentView(rolagem)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
