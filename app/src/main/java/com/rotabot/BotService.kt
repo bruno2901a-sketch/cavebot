@@ -13,6 +13,8 @@ import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.AudioAttributes
+import android.media.AudioManager
+import android.media.AudioFocusRequest
 import android.media.ImageReader
 import android.media.MediaPlayer
 import android.media.RingtoneManager
@@ -73,6 +75,9 @@ class BotService : Service() {
 
         private val alarmeLock = Any()
         @Volatile private var mediaPlayer: MediaPlayer? = null
+        private var audioManager: AudioManager? = null
+        private var audioFocusRequest: AudioFocusRequest? = null
+        private val audioFocusListener = AudioManager.OnAudioFocusChangeListener { }
 
         fun tocarAlarme(ctx: Context, uriStr: String, volumeProgresso: Int) {
             synchronized(alarmeLock) {
@@ -81,20 +86,36 @@ class BotService : Service() {
                         val uri = if (uriStr.isNotBlank() && uriStr != "alarme_pino") Uri.parse(uriStr)
                             else RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
                         if (uri == null) throw IllegalStateException("Som de alarme padrão indisponível")
+                        val manager = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                        val attrs = AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_ALARM)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build()
+                        val focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                            .setAudioAttributes(attrs)
+                            .setOnAudioFocusChangeListener(audioFocusListener)
+                            .setAcceptsDelayedFocusGain(false)
+                            .build()
+                        if (manager.requestAudioFocus(focus) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                            throw IllegalStateException("Foco de áudio não concedido")
+                        }
+                        audioManager = manager
+                        audioFocusRequest = focus
+                        if (manager.getStreamVolume(AudioManager.STREAM_ALARM) == 0) {
+                            android.util.Log.w("RotaBot", "Volume do stream de alarme está em zero")
+                        }
                         val novo = MediaPlayer()
                         try {
                             novo.setDataSource(ctx.applicationContext, uri)
-                            novo.setAudioAttributes(
-                                AudioAttributes.Builder()
-                                    .setUsage(AudioAttributes.USAGE_ALARM)
-                                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                                    .build()
-                            )
+                            novo.setAudioAttributes(attrs)
                             novo.isLooping = true
                             novo.prepare()
                             mediaPlayer = novo
                         } catch (e: Exception) {
                             novo.release()
+                            manager.abandonAudioFocusRequest(focus)
+                            audioManager = null
+                            audioFocusRequest = null
                             throw e
                         }
                     }
@@ -121,6 +142,13 @@ class BotService : Service() {
                     android.util.Log.w("RotaBot", "Falha ao liberar alarme", e)
                 } finally {
                     mediaPlayer = null
+                    val manager = audioManager
+                    val focus = audioFocusRequest
+                    if (manager != null && focus != null) {
+                        try { manager.abandonAudioFocusRequest(focus) } catch (_: Exception) {}
+                    }
+                    audioManager = null
+                    audioFocusRequest = null
                 }
             }
         }
