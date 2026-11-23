@@ -18,7 +18,7 @@ class ToqueService : AccessibilityService() {
             private set
 
         // AccessibilityService cancels an active gesture when another is dispatched.
-        // Keep one gesture in flight at a time; a timeout does not release this guard.
+        // Keep one gesture in flight at a time; the watchdog releases a missing callback after 10s.
         private val gestoEmAndamento = AtomicBoolean(false)
         fun temGestoEmAndamento(): Boolean = gestoEmAndamento.get()
 
