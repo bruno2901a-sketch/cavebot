@@ -170,6 +170,8 @@ class BotService : Service() {
     private var virtualDisplay: VirtualDisplay? = null
     @Volatile private var imageReader: ImageReader? = null
     private val capturaLock = Any()
+    private val screenSource: ScreenSource by lazy { ProjectionScreenSource { copiarImagemAtual() } }
+    private val toucher: Toucher = AccessibilityToucher
     private val encerramentoEmAndamento = AtomicBoolean(false)
     private var overlay: LinearLayout? = null
     private var statusView: TextView? = null
@@ -294,7 +296,7 @@ class BotService : Service() {
         } catch (_: Exception) { null } finally { img.close() }
     }
 
-    private fun capturarQuadroSobDemanda(): Bitmap? = copiarImagemAtual()
+    private fun capturarQuadroSobDemanda(): Bitmap? = screenSource.capturar()
 
     private fun iniciar(intent: Intent) {
         if (rodando) return
@@ -517,7 +519,7 @@ class BotService : Service() {
         processando = true
         toqueDesde = SystemClock.uptimeMillis()
         ultimoToque = ""
-        val aceito = ToqueService.clicar(x, y) { ok, msg ->
+        val aceito = toucher.tocar(x, y) { ok, msg ->
             ultimoToque = if (ok) "" else msg
             processando = false
         }
