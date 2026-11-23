@@ -37,4 +37,16 @@ class BatalhaEngineTest {
     fun rejeitaQuandoAmbosDetectoresNaoEncontramMonstro() {
         assertFalse(BatalhaEngine.confirmarPresenca(0, false))
     }
+
+    @Test
+    fun reconhecePixelVerdeDoPino() {
+        val pixel = (30 shl 16) or (190 shl 8) or 35
+        assertTrue(MapaEngine.ehPixelVerde(pixel))
+    }
+
+    @Test
+    fun rejeitaPixelForaDoVerdeDoPino() {
+        val pixel = (120 shl 16) or (150 shl 8) or 120
+        assertFalse(MapaEngine.ehPixelVerde(pixel))
+    }
 }
