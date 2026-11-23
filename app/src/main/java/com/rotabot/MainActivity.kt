@@ -254,6 +254,13 @@ class MainActivity : ComponentActivity() {
                 val refBarraY = (editRefBarraY.text.toString().replace(',', '.').toFloatOrNull() ?: Cal.REF_BARRA_TITULO_Y_PADRAO).coerceIn(0f, 1f)
 
                 prefs.edit()
+                    .putBoolean("usa_loot", checkLoot.isChecked)
+                    .putBoolean("usa_alerta", checkAlerta.isChecked)
+                    .putBoolean("so_alarme", checkSoAlarme.isChecked)
+                    .putInt("volume_alerta", seekVolume.progress)
+                    .putString("uri_som", uriSomSelecionado)
+                    .putInt("marcador_inicio", a)
+                    .putInt("marcador_fim", b)
                     .putInt("tempo_alarme_s", alarmeS)
                     .putInt("intervalo_loot_ms", lootMs)
                     .putInt("tempo_max_autoloot_s", lootMaxS)
@@ -352,24 +359,16 @@ class MainActivity : ComponentActivity() {
         outState.putString("uriSom", uriSomSelecionado)
     }
 
-    @Deprecated("Deprecated in Android API")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == codigoCaptura) {
-            if (resultCode == RESULT_OK && data != null) {
-                resultadoCaptura = resultCode
-                dadosCaptura = data
-                Toast.makeText(this, "Captura autorizada. Toque em Iniciar.", Toast.LENGTH_SHORT).show()
-            } else {
-                dadosCaptura = null
-                Toast.makeText(this, "A captura é necessária.", Toast.LENGTH_LONG).show()
-            }
-        } else if (requestCode == 99 && resultCode == RESULT_OK && data != null) {
-            val uri = data.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
-            if (uri != null) {
-                uriSomSelecionado = uri.toString()
-                Toast.makeText(this, "Som do alarme alterado!", Toast.LENGTH_SHORT).show()
-            }
+    override fun onResume() {
+        super.onResume()
+        contadoresResumoView?.text = "Chegadas: " + Rota.chegadasConfirmadas + " | Pulos: " + Rota.pulosPino
+        val erroAnterior = RelatorioErro.ler(this)
+        if (!erroAnterior.isNullOrBlank()) {
+            AlertDialog.Builder(this)
+                .setTitle("Erro da execução anterior")
+                .setMessage(erroAnterior)
+                .setPositiveButton("Fechar") { _, _ -> RelatorioErro.limpar(this) }
+                .setCancelable(false)
+                .show()
         }
-    }
-}
+    }}
