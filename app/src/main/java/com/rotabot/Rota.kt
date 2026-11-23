@@ -750,7 +750,7 @@ object Rota {
             val atual = extrairRecorteCasa(tela, centro.first, centro.second, d.first, d.second, ladoCasa)
             val anterior = recortesCasasLuta[i]
             if (anterior == null) {
-                recortesCasasLuta[i] = atual
+                // Mantém o quadro de referência anterior à luta; atualizar aqui esconderia o corpo.
             } else {
                 val diff = calcularDiferencaMediaRecorte(anterior, atual)
                 val novaVar = max(variacaoMaxCasasLuta[i], diff)
