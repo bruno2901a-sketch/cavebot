@@ -276,7 +276,11 @@ class BotService : Service() {
         (getSystemService(WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealMetrics(metrics)
 
         try {
-            val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            val escalaResolucao = (maxOf(metrics.widthPixels, metrics.heightPixels) / 2460f).coerceIn(0.4f, 1.5f)
+        Rota.pixelsPorCasa = pxPorCasa * escalaResolucao
+        Rota.tamanhoCasaPx = tamCasaPx * escalaResolucao
+
+        val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
             projection = manager.getMediaProjection(resultCode, data)
                 ?: throw IllegalStateException("MediaProjection não foi criada")
             projection?.registerCallback(projectionCallback, workerHandler)
