@@ -803,7 +803,7 @@ object Rota {
             }
         }
         val razao = escuros.toFloat() / px.size.toFloat()
-        return razao >= 0.15f
+        return razao >= 0.15f && acharBarraTituloLoot(quadro) != null
     }
 
     private fun acharBarraTituloLoot(quadro: Bitmap): Pair<Int, Int>? {
@@ -880,7 +880,9 @@ object Rota {
                 naoFundo++
             }
         }
-        return naoFundo >= 10
+        val escala = quadro.width / 2460f
+        val minimoPixels = (10f * escala * escala).toInt().coerceAtLeast(2)
+        return naoFundo >= minimoPixels
     }
 
     private fun capturarQuadroFresco(fallbackTela: Bitmap): Bitmap {
