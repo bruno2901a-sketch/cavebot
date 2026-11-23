@@ -95,7 +95,7 @@ class ToqueService : AccessibilityService() {
                 watchdogHandler.postDelayed(watchdog, 10000L)
                 val aceito = service.dispatchGesture(gesture, object : GestureResultCallback() {
                     override fun onCompleted(gestureDescription: GestureDescription?) {
-                        concluir(true, "Gesto concluído em ${x.toInt()},${y.toInt()} (jogo não confirmado)")
+                        concluir(true, "Gesto concluído em ${x.toInt()},${y.toInt()} (pacote do jogo confirmado)")
                     }
                     override fun onCancelled(gestureDescription: GestureDescription?) {
                         concluir(false, "Android cancelou o toque em ${x.toInt()},${y.toInt()}")
