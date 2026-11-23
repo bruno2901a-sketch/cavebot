@@ -90,15 +90,6 @@ private class EstadoPino {
     }
 }
 
-private fun ehVerdePinoAtivo(p: Int): Boolean {
-    val r = (p shr 16) and 0xFF
-    val g = (p shr 8) and 0xFF
-    val b = p and 0xFF
-    return g >= Cal.VERDE_G_MIN && r <= Cal.VERDE_R_MAX && b <= Cal.VERDE_B_MAX
-}
-
-private fun ehPixelVerdeCaixa(p: Int): Boolean = ehVerdePinoAtivo(p)
-
 object Rota {
     @Volatile
     var limiteAlarmeMs: Long = 30000L
@@ -2539,7 +2530,7 @@ if (!gestoItem.first) {
             val intPrevOffset = yy * stride
             val intCurrOffset = (yy + 1) * stride
             for (xx in 0 until w) {
-                if (ehPixelVerdeCaixa(px[rowOffset + xx])) {
+                if (MapaEngine.ehPixelVerdeCaixa(px[rowOffset + xx])) {
                     linhaSoma++
                 }
                 integral[intCurrOffset + xx + 1] = integral[intPrevOffset + xx + 1] + linhaSoma
@@ -2588,7 +2579,7 @@ if (!gestoItem.first) {
             val rowOffset = yy * w
             for (xx in melhorX0..melhorX1) {
                 val p = px[rowOffset + xx]
-                if (ehPixelVerdeCaixa(p)) {
+                if (MapaEngine.ehPixelVerdeCaixa(p)) {
                     sx += xx.toLong()
                     sy += yy.toLong()
                     sr += ((p shr 16) and 0xFF).toLong()
@@ -2805,7 +2796,7 @@ if (!gestoItem.first) {
         val totalPixeis = subW * subH
         val verdeMask = BooleanArray(totalPixeis)
         for (i in 0 until totalPixeis) {
-            verdeMask[i] = ehVerdePinoAtivo(px[i])
+            verdeMask[i] = MapaEngine.ehPixelVerde(px[i])
         }
 
         val visitado = BooleanArray(totalPixeis)
