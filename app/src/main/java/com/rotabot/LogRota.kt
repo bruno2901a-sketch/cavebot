@@ -70,14 +70,22 @@ object LogRota {
         }
     }
 
+    private val regexAcerto = Regex("acerto=\\d+[.,]\\d+")
+    private val regexDist = Regex("dist=(\\d+[.,]\\d+px|N/A)")
+    private val regexVerde = Regex("verde=-?\\d+")
+    private val regexRgb = Regex("rgb\\(\\d+,\\d+,\\d+\\)")
+    private val regexClique = Regex("CLIQUE \\d+,\\d+")
+    private val regexDiffMini = Regex("diffMini=\\d+[.,]\\d+")
+    private val regexSlug = Regex("[^a-zA-Z0-9]+")
+
     private fun normalizarAssinatura(msg: String): String {
         return msg
-            .replace(Regex("acerto=\\d+[.,]\\d+"), "acerto=#")
-            .replace(Regex("dist=(\\d+[.,]\\d+px|N/A)"), "dist=#")
-            .replace(Regex("verde=-?\\d+"), "verde=#")
-            .replace(Regex("rgb\\(\\d+,\\d+,\\d+\\)"), "rgb(#,#,#)")
-            .replace(Regex("CLIQUE \\d+,\\d+"), "CLIQUE #,#")
-            .replace(Regex("diffMini=\\d+[.,]\\d+"), "diffMini=#")
+            .replace(regexAcerto, "acerto=#")
+            .replace(regexDist, "dist=#")
+            .replace(regexVerde, "verde=#")
+            .replace(regexRgb, "rgb(#,#,#)")
+            .replace(regexClique, "CLIQUE #,#")
+            .replace(regexDiffMini, "diffMini=#")
     }
 
     private fun ehEventoObrigatorio(msg: String): Boolean {
@@ -91,7 +99,6 @@ object LogRota {
             msg.contains("verde sumiu") ||
             msg.contains("nao localizado") ||
             msg.contains("luta excedeu limite") ||
-            msg.contains("BATALHA_DETECTOR") ||
             msg.contains("BATALHA_INICIO") ||
             msg.contains("ALARME_INICIO") ||
             msg.contains("corpo ") ||
@@ -164,7 +171,7 @@ object LogRota {
                 var nomeImagemSalva: String? = null
                 if (motivo != null && copiaTela != null && !copiaTela.isRecycled) {
                     val pastaFalhas = diretorioFalhas(ctx)
-                    val slugMotivo = motivo.replace(Regex("[^a-zA-Z0-9]+"), "_")
+                    val slugMotivo = motivo.replace(regexSlug, "_")
                     val nomeImg = "falha_${timestampArquivo}_${slugMotivo}.jpg"
                     val arqImg = File(pastaFalhas, nomeImg)
                     FileOutputStream(arqImg).use { out ->
