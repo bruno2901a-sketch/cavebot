@@ -1,18 +1,22 @@
 package com.rotabot
 
 import android.content.Context
+import java.util.concurrent.atomic.AtomicBoolean
 
 // Guarda o erro completo quando o app trava, para aparecer na próxima abertura.
 object RelatorioErro {
     private const val ARQUIVO = "erro"
     private const val CHAVE = "texto"
+    private val instalado = AtomicBoolean(false)
 
     fun instalar(ctx: Context) {
+        if (!instalado.compareAndSet(false, true)) return
+        val appContext = ctx.applicationContext
         val anterior = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, erro ->
             try {
                 val texto = erro.stackTraceToString().take(3500)
-                ctx.getSharedPreferences(ARQUIVO, Context.MODE_PRIVATE)
+                appContext.getSharedPreferences(ARQUIVO, Context.MODE_PRIVATE)
                     .edit().putString(CHAVE, texto).commit()
             } catch (_: Exception) {
             }
