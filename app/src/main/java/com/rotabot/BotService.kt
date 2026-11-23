@@ -62,6 +62,7 @@ class BotService : Service() {
         const val EXTRA_LIMIAR_MINIMAPA_PARADO = "limiar_minimapa_parado"
         const val EXTRA_REF_BARRA_TITULO_X = "ref_barra_titulo_x"
         const val EXTRA_REF_BARRA_TITULO_Y = "ref_barra_titulo_y"
+        const val EXTRA_MODO_CIRCULAR = "modo_circular"
 
         private const val CANAL = "rotabot_rota"
         private const val NOTIFICACAO_ID = 71
@@ -271,6 +272,7 @@ class BotService : Service() {
         inicio = intent.getIntExtra(EXTRA_INICIO, 1).coerceIn(1, Cal.TOTAL_ICONES)
         fim = intent.getIntExtra(EXTRA_FIM, 5).coerceIn(inicio, Cal.TOTAL_ICONES)
         usaLoot = intent.getBooleanExtra(EXTRA_USA_LOOT, false)
+        Rota.modoCircular = intent.getBooleanExtra(EXTRA_MODO_CIRCULAR, false)
         usaAlerta = intent.getBooleanExtra(EXTRA_USA_ALERTA, true)
         soAlarme = intent.getBooleanExtra(EXTRA_SO_ALARME, false)
         volumeAlerta = intent.getIntExtra(EXTRA_VOLUME, 80)
