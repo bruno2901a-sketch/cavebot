@@ -519,14 +519,17 @@ class BotService : Service() {
         processando = true
         toqueDesde = SystemClock.uptimeMillis()
         ultimoToque = ""
-        val aceito = toucher.tocar(x, y) { ok, msg ->
-            ultimoToque = if (ok) "" else msg
+        try {
+            // Só devolve sucesso à rota depois de o Android confirmar o gesto.
+            val (concluido, mensagem) = ToqueService.clicarEAguardar(
+                x, y, duracaoMs = 50L, timeoutMs = 2500L
+            )
+            if (!concluido) {
+                ultimoToque = mensagem
+                throw ToqueNaoExecutadoException(mensagem)
+            }
+        } finally {
             processando = false
-        }
-        if (!aceito) {
-            processando = false
-            ultimoToque = "Toque recusado: serviço de acessibilidade ocupado ou indisponível"
-            throw ToqueNaoExecutadoException(ultimoToque)
         }
     }
 
