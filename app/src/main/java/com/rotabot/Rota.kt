@@ -146,6 +146,7 @@ object Rota {
     private var ultimoUriSom = ""
     private var ultimoVolume = 80
     private val estadoPino = EstadoPino()
+    private val maquinaNavegacao = NavigationStateMachine()
     private val pausaPinoLock = Any()
     private var quadrosChegada: Int
         get() = estadoPino.quadrosChegada
@@ -324,6 +325,7 @@ object Rota {
     @Synchronized
     fun resetar() {
         fase = FaseNavegacao.ESCOLHER
+        maquinaNavegacao.transition(NavigationState.Escolhendo)
         alvo = 0
         direcaoIda = true
         ultimoClique = 0L
@@ -387,6 +389,7 @@ object Rota {
     ) {
         estadoPino.reiniciar(preservarFalhas = true)
         fase = FaseNavegacao.CAMINHANDO
+        maquinaNavegacao.transition(NavigationState.Caminhando(alvo + 1))
         ultimoVerdeRel = relPos
         ultimoPosPinoConhecidaRel = relPos
         ultimoPosPinoEraVerde = veioDeTemplate
@@ -422,6 +425,7 @@ object Rota {
         if (pausaManualDesde == 0L) {
             pausaManualDesde = SystemClock.uptimeMillis()
         }
+        maquinaNavegacao.transition(NavigationState.Pausado("pausa manual"))
     }
 
     @Synchronized
@@ -440,7 +444,10 @@ object Rota {
             if (fimLutaEm > 0L) fimLutaEm += duracao
         }
         pausaManualDesde = 0L
+        maquinaNavegacao.transition(if (fase == FaseNavegacao.CAMINHANDO) NavigationState.Caminhando(alvo + 1) else NavigationState.Escolhendo)
     }
+
+    fun estadoOperacional(): NavigationState = maquinaNavegacao.state
 
     fun estaPausadoPorPinoPerdido(): Boolean = synchronized(pausaPinoLock) { pausadoPorPinoPerdido }
 
@@ -451,6 +458,7 @@ object Rota {
             pausadoAte = 0L
         }
         estadoPino.reiniciar(false)
+        maquinaNavegacao.transition(NavigationState.Escolhendo)
     }
 
     private fun voltarPinoAnteriorRespeitandoDirecao() {
@@ -482,6 +490,7 @@ object Rota {
             pausadoAte = Long.MAX_VALUE
         }
         fase = FaseNavegacao.ESCOLHER
+        maquinaNavegacao.transition(NavigationState.Pausado("pino perdido: $pinoId"))
         if (context != null) {
             if (alertaHabilitado) BotService.tocarAlarme(context, ultimoUriSom, ultimoVolume)
             LogRota.registrarPasso(context, "PAUSADO_POR_PINO_PERDIDO pino=$pinoId", tela)
@@ -1666,6 +1675,7 @@ if (!gestoItem.first) {
         val maxToqueY = (tela.height - 28f).coerceAtLeast(minToqueY)
         val pinoId = modelo.indice
 
+        maquinaNavegacao.transition(NavigationState.Recuperando(pinoId, nivelRecuperacaoPino + 1))
         if (nivelRecuperacaoPino == 0) {
             val buscaTemplate = buscarTemplateSemAlterarEstado(tela, x0, y0, x1, y1, modelo, cx, cy)
             val posReal = ultimoPosPinoConhecidaRel ?: buscaTemplate.first?.let {
@@ -1786,6 +1796,7 @@ if (!gestoItem.first) {
             if (batalhaSemCruz) {
                 if (!estavaEmLuta) {
                     estavaEmLuta = true
+                    maquinaNavegacao.transition(NavigationState.Lutando(agoraSemCruz))
                     tempoInicioLuta = agoraSemCruz
                     estavaEmLutaCaminhando = (fase == FaseNavegacao.CAMINHANDO)
                     verdeRelAntesDaLuta = ultimoVerdeRel
@@ -1830,6 +1841,7 @@ if (!gestoItem.first) {
         if (monstroDetectado) {
             if (!estavaEmLuta) {
                 estavaEmLuta = true
+                maquinaNavegacao.transition(NavigationState.Lutando(agora))
                 tempoInicioLuta = agora
                 estavaEmLutaCaminhando = (fase == FaseNavegacao.CAMINHANDO)
                 verdeRelAntesDaLuta = ultimoVerdeRel
@@ -1907,6 +1919,7 @@ if (!gestoItem.first) {
                         ((y0 + posRetomada.second) - cy).toDouble()
                     ).toFloat()
                     fase = FaseNavegacao.CAMINHANDO
+                    maquinaNavegacao.transition(NavigationState.Caminhando(alvo + 1))
                     ultimoVerdeRel = posRetomada
                     ultimoPosPinoConhecidaRel = posRetomada
                     ultimoPosPinoEraVerde = true
@@ -1927,6 +1940,7 @@ if (!gestoItem.first) {
                 }
 
                 fase = FaseNavegacao.ESCOLHER
+                maquinaNavegacao.transition(NavigationState.Escolhendo)
                 retomarVerdeAte = 0L
                 verdeVeioDeTemplate = false
                 ultimoVerdeRel = null
@@ -1940,6 +1954,7 @@ if (!gestoItem.first) {
 
             val antesLootMs = SystemClock.uptimeMillis()
             if (usaLoot) {
+                maquinaNavegacao.transition(NavigationState.Lootando)
                 executarAutoloot(tela.width, tela.height, context, tela)
             }
             val agoraPosLoot = SystemClock.uptimeMillis()
@@ -1994,6 +2009,7 @@ if (!gestoItem.first) {
                         ((y0 + posRel.second) - centroYPosLoot).toDouble()
                     ).toFloat()
                     fase = FaseNavegacao.CAMINHANDO
+                    maquinaNavegacao.transition(NavigationState.Caminhando(alvo + 1))
                     ultimoVerdeRel = posRel
                     ultimoPosPinoConhecidaRel = posRel
                     ultimoPosPinoEraVerde = true
