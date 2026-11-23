@@ -1920,6 +1920,7 @@ if (!gestoItem.first) {
             val telaPosLoot = if (usaLoot) capturarQuadroFresco() else tela
             if (telaPosLoot == null) {
                 fase = FaseNavegacao.ESCOLHER
+                maquinaNavegacao.transition(NavigationState.Escolhendo)
                 estadoPino.retomarVerdeAte = 0L
                 estadoPino.verdeVeioDeTemplate = false
                 estadoPino.ultimoVerdeRel = null
@@ -1972,6 +1973,7 @@ if (!gestoItem.first) {
                 }
 
                 fase = FaseNavegacao.ESCOLHER
+                maquinaNavegacao.transition(NavigationState.Escolhendo)
                 estadoPino.retomarVerdeAte = 0L
                 estadoPino.verdeVeioDeTemplate = false
                 estadoPino.ultimoVerdeRel = null
