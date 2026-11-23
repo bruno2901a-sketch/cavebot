@@ -6,11 +6,29 @@ import android.graphics.Path
 import android.util.DisplayMetrics
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 class ToqueService : AccessibilityService() {
     companion object {
         @Volatile var instance: ToqueService? = null
             private set
+
+        fun clicarEAguardar(x: Float, y: Float, duracaoMs: Long = 50L, timeoutMs: Long = 1800L): Pair<Boolean, String> {
+            val latch = CountDownLatch(1)
+            var resultado = false
+            var mensagem = "Tempo limite aguardando gesto"
+            val aceito = clicar(x, y, duracaoMs) { ok, msg ->
+                resultado = ok
+                mensagem = msg
+                latch.countDown()
+            }
+            if (!aceito) return Pair(false, mensagem)
+            if (!latch.await(timeoutMs.coerceAtLeast(100L), TimeUnit.MILLISECONDS)) {
+                return Pair(false, "Tempo limite aguardando conclusão do gesto")
+            }
+            return Pair(resultado, mensagem)
+        }
 
         fun clicar(x: Float, y: Float, duracaoMs: Long = 50L, callback: ((Boolean, String) -> Unit)? = null): Boolean {
             val service = instance ?: run { callback?.invoke(false, "Acessibilidade desconectada"); return false }
