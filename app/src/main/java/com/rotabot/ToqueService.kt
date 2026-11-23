@@ -16,6 +16,9 @@ class ToqueService : AccessibilityService() {
     companion object {
         @Volatile var instance: ToqueService? = null
             private set
+        @Volatile private var pacoteJogoAlvo: String? = null
+
+        fun limparPacoteAlvo() { pacoteJogoAlvo = null }
 
         // AccessibilityService cancels an active gesture when another is dispatched.
         // Keep one gesture in flight at a time; the watchdog releases a missing callback after 10s.
@@ -40,6 +43,18 @@ class ToqueService : AccessibilityService() {
 
         fun clicar(x: Float, y: Float, duracaoMs: Long = 50L, callback: ((Boolean, String) -> Unit)? = null): Boolean {
             val service = instance ?: run { callback?.invoke(false, "Acessibilidade desconectada"); return false }
+            val pacoteAtivo = try { service.rootInActiveWindow?.packageName?.toString() } catch (_: Exception) { null }
+            if (pacoteAtivo.isNullOrBlank() || pacoteAtivo == service.packageName) {
+                callback?.invoke(false, "Não foi possível confirmar o jogo em primeiro plano; toque bloqueado")
+                return false
+            }
+            val alvoAtual = pacoteJogoAlvo
+            if (alvoAtual == null) {
+                pacoteJogoAlvo = pacoteAtivo
+            } else if (alvoAtual != pacoteAtivo) {
+                callback?.invoke(false, "Jogo fora de primeiro plano; toque bloqueado")
+                return false
+            }
             if (!gestoEmAndamento.compareAndSet(false, true)) {
                 callback?.invoke(false, "Toque anterior ainda não foi concluído; novo toque bloqueado")
                 return false
