@@ -47,10 +47,11 @@ object BatalhaEngine {
             }
         }
 
-        return pixelsBarraVida >= 8 && pixelsDestaque >= 220
+        val escala = (tela.width / 2460f).coerceIn(0.4f, 1.5f)
+        return pixelsBarraVida >= (8f * escala).toInt().coerceAtLeast(3) && pixelsDestaque >= (220f * escala * escala).toInt().coerceAtLeast(35)
     }
 
     fun confirmarPresenca(linhasOcupadas: Int, detectorLegado: Boolean): Boolean {
-        return linhasOcupadas > 0 && detectorLegado
+        return linhasOcupadas > 0 || detectorLegado
     }
 }
