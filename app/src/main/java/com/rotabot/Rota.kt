@@ -1816,6 +1816,10 @@ if (!gestoItem.first) {
             }
             if (estavaEmLuta) {
                 if (estadoLogLutaAlarme == 1) ServiceAlarmPlayer.parar()
+                maquinaNavegacao.transition(
+                    if (fase == FaseNavegacao.CAMINHANDO) NavigationState.Caminhando(alvo + 1)
+                    else NavigationState.Escolhendo
+                )
                 return "BATALHA ENCERRADA - aguardando cruz para retomar"
             }
             if (usaAlerta) ServiceAlarmPlayer.parar()
@@ -1890,6 +1894,11 @@ if (!gestoItem.first) {
             }
 
             estavaEmLuta = false
+            maquinaNavegacao.transition(
+                if (usaLoot && !LootEngine.ignorarLutaCurta(duracaoTotalLutaMs)) NavigationState.Lootando
+                else if (veioDeCaminhando) NavigationState.Caminhando(alvo + 1)
+                else NavigationState.Escolhendo
+            )
             tempoInicioLuta = 0L
             estavaEmLutaCaminhando = false
             verdeRelAntesDaLuta = null
