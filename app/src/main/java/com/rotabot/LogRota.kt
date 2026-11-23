@@ -217,7 +217,7 @@ object LogRota {
             null
         } ?: return
 
-        val timestampHora = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
+        val timestampHora = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.ROOT).format(Date())
         val timestampArquivo = SimpleDateFormat("HHmmss_SSS", Locale.getDefault()).format(Date())
         executor.execute {
             try {
