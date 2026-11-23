@@ -264,7 +264,13 @@ class BotService : Service() {
             "RotaBotScreenCapture", metrics.widthPixels, metrics.heightPixels, metrics.densityDpi,
             DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, imageReader?.surface, null, workerHandler
         )
-        Rota.carregar(this, inicio, fim, maxOf(metrics.widthPixels, metrics.heightPixels))
+        try {
+            Rota.carregar(this, inicio, fim, maxOf(metrics.widthPixels, metrics.heightPixels))
+        } catch (e: Exception) {
+            liberarCaptura()
+            pararTudo("Falha ao carregar mapa: ${e.message ?: "erro desconhecido"}")
+            return
+        }
         rodando = false
         rotaIniciada = false
         pausaManual = false
