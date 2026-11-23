@@ -450,7 +450,6 @@ class BotService : Service() {
             return
         }
         ajustarRotacao()
-        val agora = SystemClock.uptimeMillis()
         val frame = copiarImagemAtual()
         if (frame == null) {
             // acquireLatestImage pode retornar null quando a tela não mudou.
