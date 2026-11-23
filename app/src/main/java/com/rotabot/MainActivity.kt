@@ -39,7 +39,7 @@ class MainActivity : Activity() {
             setPadding(36, 36, 36, 36)
         }
         val titulo = TextView(this).apply {
-            text = "RotaBot v1.9.2\n\n1. Permita a sobreposição.\n2. Ative a acessibilidade.\n3. Autorize a captura da tela.\n4. Ajuste as opções e inicie."
+            text = "RotaBot v1.9.3\n\n1. Permita a sobreposição.\n2. Ative a acessibilidade.\n3. Autorize a captura da tela.\n4. Ajuste as opções e inicie."
             textSize = 14f
         }
         val inicio = EditText(this).apply {
