@@ -33,6 +33,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
+import java.util.concurrent.atomic.AtomicBoolean
 
 class BotService : Service() {
     companion object {
@@ -107,6 +108,8 @@ class BotService : Service() {
     private var projection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
     @Volatile private var imageReader: ImageReader? = null
+    private val capturaLock = Any()
+    private val encerramentoEmAndamento = AtomicBoolean(false)
     private var overlay: LinearLayout? = null
     private var statusView: TextView? = null
     private var contadorView: TextView? = null
@@ -182,14 +185,9 @@ class BotService : Service() {
         }
     }
 
-    private fun capturarQuadroSobDemanda(): Bitmap? {
-        val reader = imageReader ?: return null
-        val img = try {
-            reader.acquireLatestImage()
-        } catch (_: Exception) {
-            null
-        } ?: return null
-        return try {
+    private fun copiarImagemAtual(reader: ImageReader?): Bitmap? = synchronized(capturaLock) {
+        val img = try { reader?.acquireLatestImage() } catch (_: Exception) { null } ?: return@synchronized null
+        try {
             val plane = img.planes[0]
             val rowPixels = plane.rowStride / plane.pixelStride
             val raw = Bitmap.createBitmap(rowPixels, img.height, Bitmap.Config.ARGB_8888)
@@ -198,17 +196,15 @@ class BotService : Service() {
                 val cortado = Bitmap.createBitmap(raw, 0, 0, img.width, img.height)
                 raw.recycle()
                 cortado
-            } else {
-                raw
-            }
-        } catch (_: Exception) {
-            null
-        } finally {
-            img.close()
-        }
+            } else raw
+        } catch (_: Exception) { null } finally { img.close() }
     }
 
+    private fun capturarQuadroSobDemanda(): Bitmap? = copiarImagemAtual(imageReader)
+
     private fun iniciar(intent: Intent) {
+        if (rodando) return
+        encerramentoEmAndamento.set(false)
         EstadoBotController.definir(EstadoBot.PREPARANDO)
         iniciarNotificacao()
         if (rodando) return
@@ -262,11 +258,13 @@ class BotService : Service() {
         val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         projection = manager.getMediaProjection(resultCode, data)
         projection?.registerCallback(projectionCallback, workerHandler)
-        imageReader = ImageReader.newInstance(metrics.widthPixels, metrics.heightPixels, PixelFormat.RGBA_8888, 2)
-        virtualDisplay = projection?.createVirtualDisplay(
-            "RotaBotScreenCapture", metrics.widthPixels, metrics.heightPixels, metrics.densityDpi,
-            DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, imageReader?.surface, null, workerHandler
-        )
+        synchronized(capturaLock) {
+            imageReader = ImageReader.newInstance(metrics.widthPixels, metrics.heightPixels, PixelFormat.RGBA_8888, 2)
+            virtualDisplay = projection?.createVirtualDisplay(
+                "RotaBotScreenCapture", metrics.widthPixels, metrics.heightPixels, metrics.densityDpi,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, imageReader?.surface, null, workerHandler
+            )
+        }
         try {
             Rota.carregar(this, inicio, fim, maxOf(metrics.widthPixels, metrics.heightPixels))
         } catch (e: Exception) {
@@ -295,12 +293,21 @@ class BotService : Service() {
     }
 
     private fun recriarLeitorCaptura(m: DisplayMetrics) {
-        val atual = imageReader
-        val novo = ImageReader.newInstance(m.widthPixels, m.heightPixels, PixelFormat.RGBA_8888, 2)
-        virtualDisplay?.resize(m.widthPixels, m.heightPixels, m.densityDpi)
-        virtualDisplay?.surface = novo.surface
-        imageReader = novo
-        try { atual?.close() } catch (_: Exception) {}
+        synchronized(capturaLock) {
+            if (encerramentoEmAndamento.get()) return
+            val atual = imageReader
+            val novo = try { ImageReader.newInstance(m.widthPixels, m.heightPixels, PixelFormat.RGBA_8888, 2) }
+                catch (e: Exception) { registrarStatus("Falha ao recriar captura: ${e.javaClass.simpleName}"); return }
+            try {
+                virtualDisplay?.resize(m.widthPixels, m.heightPixels, m.densityDpi)
+                virtualDisplay?.surface = novo.surface
+                imageReader = novo
+                try { atual?.close() } catch (_: Exception) {}
+            } catch (e: Exception) {
+                try { novo.close() } catch (_: Exception) {}
+                registrarStatus("Falha ao trocar captura: ${e.javaClass.simpleName}")
+            }
+        }
     }
 
     private fun ajustarRotacao() {
@@ -315,9 +322,9 @@ class BotService : Service() {
 
     private fun executarCiclo() {
         if (processando) {
+            if (pausaManual) return
             if (SystemClock.uptimeMillis() - toqueDesde < 8000L) return
-            processando = false
-            ultimoToque = "Gesto sem retorno após 8s; rota pausada por segurança"
+            ultimoToque = "Gesto sem retorno após 8s; rota pausada. Aguardando Android liberar toque"
             pausaManual = true
             EstadoBotController.definir(EstadoBot.PAUSADO)
             Rota.cancelarAutoloot = true
@@ -327,8 +334,8 @@ class BotService : Service() {
         }
         ajustarRotacao()
         val agora = SystemClock.uptimeMillis()
-        val image = try { imageReader?.acquireLatestImage() } catch (_: Exception) { null }
-        if (image == null) {
+        val frame = copiarImagemAtual(imageReader)
+        if (frame == null) {
             if (!pausaManual && ultimoFrameEm > 0L && agora - ultimoFrameEm > 3000L) {
                 val segsSemImagem = (agora - ultimoFrameEm) / 1000L
                 registrarStatus("SEM IMAGEM há ${segsSemImagem}s - recriando captura")
@@ -344,18 +351,7 @@ class BotService : Service() {
             return
         }
         ultimoFrameEm = agora
-        val frame: Bitmap? = try {
-            val plane = image.planes[0]
-            val rowPixels = plane.rowStride / plane.pixelStride
-            val raw = Bitmap.createBitmap(rowPixels, image.height, Bitmap.Config.ARGB_8888)
-            raw.copyPixelsFromBuffer(plane.buffer)
-            if (rowPixels != image.width) {
-                val cortado = Bitmap.createBitmap(raw, 0, 0, image.width, image.height)
-                raw.recycle()
-                cortado
-            } else raw
-        } catch (_: Exception) { null } finally { image.close() }
-        if (frame == null) return
+
 
         try {
             val copiaLog = frame.copy(Bitmap.Config.ARGB_8888, false)
@@ -382,7 +378,7 @@ class BotService : Service() {
     }
 
     private fun tocarNaTela(x: Float, y: Float) {
-        if (soAlarme) return
+        if (soAlarme || pausaManual || encerramentoEmAndamento.get()) return
         if (processando) return
         processando = true
         toqueDesde = SystemClock.uptimeMillis()
@@ -580,23 +576,29 @@ class BotService : Service() {
 
     private fun liberarCaptura() {
         Rota.capturadorQuadroLoot = null
-        virtualDisplay?.release()
-        virtualDisplay = null
-        imageReader?.close()
-        imageReader = null
-        projection?.stop()
-        projection = null
+        synchronized(capturaLock) {
+            try { virtualDisplay?.release() } catch (_: Exception) {}
+            virtualDisplay = null
+            try { imageReader?.close() } catch (_: Exception) {}
+            imageReader = null
+            try { projection?.stop() } catch (_: Exception) {}
+            projection = null
+        }
         ultimoFrameLog?.recycle()
         ultimoFrameLog = null
     }
 
     private fun pararTudo(motivo: String) {
+        if (!encerramentoEmAndamento.compareAndSet(false, true)) return
         EstadoBotController.definir(EstadoBot.ENCERRANDO)
         Rota.cancelarAutoloot = true
         rodando = false
         rotaIniciada = false
+        pausaManual = true
+        workerHandler.removeCallbacks(ciclo)
         liberarCaptura()
         removerOverlay()
+        registrarStatus(motivo)
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
         EstadoBotController.resetar()

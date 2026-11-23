@@ -18,6 +18,7 @@ class ToqueService : AccessibilityService() {
         // AccessibilityService cancels an active gesture when another is dispatched.
         // Keep one gesture in flight at a time; a timeout does not release this guard.
         private val gestoEmAndamento = AtomicBoolean(false)
+        fun temGestoEmAndamento(): Boolean = gestoEmAndamento.get()
 
         fun clicarEAguardar(x: Float, y: Float, duracaoMs: Long = 50L, timeoutMs: Long = 1800L): Pair<Boolean, String> {
             val latch = CountDownLatch(1)
