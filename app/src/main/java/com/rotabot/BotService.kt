@@ -63,6 +63,7 @@ class BotService : Service() {
         const val EXTRA_REF_BARRA_TITULO_X = "ref_barra_titulo_x"
         const val EXTRA_REF_BARRA_TITULO_Y = "ref_barra_titulo_y"
         const val EXTRA_MODO_CIRCULAR = "modo_circular"
+        const val EXTRA_SALVAR_PRINTS = "salvar_prints"
 
         private const val CANAL = "rotabot_rota"
         private const val NOTIFICACAO_ID = 71
@@ -273,6 +274,7 @@ class BotService : Service() {
         fim = intent.getIntExtra(EXTRA_FIM, 5).coerceIn(inicio, Cal.TOTAL_ICONES)
         usaLoot = intent.getBooleanExtra(EXTRA_USA_LOOT, false)
         Rota.modoCircular = intent.getBooleanExtra(EXTRA_MODO_CIRCULAR, false)
+        LogRota.salvarPrints = intent.getBooleanExtra(EXTRA_SALVAR_PRINTS, true)
         usaAlerta = intent.getBooleanExtra(EXTRA_USA_ALERTA, true)
         soAlarme = intent.getBooleanExtra(EXTRA_SO_ALARME, false)
         volumeAlerta = intent.getIntExtra(EXTRA_VOLUME, 80)
