@@ -1,6 +1,7 @@
 package com.rotabot
 
 import androidx.activity.ComponentActivity
+import androidx.core.content.IntentCompat
 import android.Manifest
 import androidx.activity.result.contract.ActivityResultContracts
 import android.app.AlertDialog
@@ -48,7 +49,7 @@ class MainActivity : ComponentActivity() {
 
     private val somLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { resultado ->
         if (resultado.resultCode == RESULT_OK && resultado.data != null) {
-            val uri = if (Build.VERSION.SDK_INT >= 33) resultado.data?.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI, Uri::class.java) else resultado.data?.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
+            val uri = resultado.data?.let { IntentCompat.getParcelableExtra(it, RingtoneManager.EXTRA_RINGTONE_PICKED_URI, Uri::class.java) }
             if (uri != null) {
                 uriSomSelecionado = uri.toString()
                 getSharedPreferences("rotabot_prefs", Context.MODE_PRIVATE).edit().putString("uri_som", uriSomSelecionado).apply()
