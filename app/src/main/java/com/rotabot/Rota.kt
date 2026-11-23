@@ -914,6 +914,19 @@ object Rota {
         return if (c != null) "${c.first},${c.second}" else "N/A"
     }
 
+    private fun clicarLootComRetry(x: Float, y: Float): Pair<Boolean, String> {
+        var ultimo = Pair(false, "Toque não executado")
+        repeat(3) { tentativa ->
+            ultimo = ToqueService.clicarEAguardar(x, y, 30L)
+            if (ultimo.first) return ultimo
+            val aguardandoGesto = ultimo.second.contains("gesto anterior", ignoreCase = true) ||
+                ultimo.second.contains("Toque anterior ainda não foi concluído", ignoreCase = true)
+            if (!aguardandoGesto || tentativa == 2) return ultimo
+            SystemClock.sleep(120L)
+        }
+        return ultimo
+    }
+
     private fun executarAutoloot(larguraTela: Int, alturaTela: Int, context: Context, tela: Bitmap) {
         val inicioMs = SystemClock.uptimeMillis()
         var cliquesCount = 0
@@ -1029,7 +1042,7 @@ object Rota {
             val inicioCorpoMs = SystemClock.uptimeMillis()
             val cruzAntes = obterCruzMinimapaSegura(tela)
 
-            val gestoCorpo = ToqueService.clicarEAguardar(cand.px, cand.py, 30L)
+            val gestoCorpo = clicarLootComRetry(cand.px, cand.py)
 if (!gestoCorpo.first) {
     LogRota.registrarPasso(context, "AUTOLOOT toque corpo falhou: " + gestoCorpo.second, tela)
     continue
@@ -1157,7 +1170,7 @@ if (!gestoCorpo.first) {
                 var pegouEste = false
                 for (tentativa in 1..Cal.MAX_TENTATIVAS_ITEM_LOOT) {
                     if (SystemClock.uptimeMillis() - inicioCorpoMs >= Cal.TEMPO_MAX_POR_CORPO_MS) break
-                    val gestoItem = ToqueService.clicarEAguardar(lx, ly, 30L)
+                    val gestoItem = clicarLootComRetry(lx, ly)
 if (!gestoItem.first) {
     LogRota.registrarPasso(context, "AUTOLOOT toque item falhou: " + gestoItem.second, tela)
     break
