@@ -1715,12 +1715,11 @@ if (!gestoItem.first) {
         }
 
         val resultadoRecuperacao = tratarEsgotamentoPinoSemPulo(agora, pinoId, context, tela)
-        val motivoRecuperacao = if (pausadoPorPinoPerdido) {
-            "PAUSADO_POR_PINO_PERDIDO"
-        } else if (resultadoRecuperacao) {
-            "RECUPERACAO_VOLTOU_PINO_ANTERIOR"
-        } else {
-            "RECUPERACAO_SEM_AVANCO"
+        val motivoRecuperacao = when {
+            pausadoPorPinoPerdido -> "PAUSADO_POR_PINO_PERDIDO"
+            Cal.PERMITIR_PULO && resultadoRecuperacao -> "PULOU_PINO_POR_CONFIGURACAO"
+            resultadoRecuperacao -> "RECUPERACAO_VOLTOU_PINO_ANTERIOR"
+            else -> "RECUPERACAO_SEM_AVANCO"
         }
         return formatarLog(
             fase.name, pinoId, melhorScore, ultimoQtdVerde, ultimoRgbVerde,
@@ -1848,18 +1847,32 @@ if (!gestoItem.first) {
                 cliquesVerde = 0
                 naoVisto = 0
 
-                if (veioDeCaminhando && refVerde != null &&
-                    buscarComponentesVerdes(tela, x0, y0, x1, y1).isNotEmpty()
-                ) {
+                val verdeRetomada = if (veioDeCaminhando && refVerde != null) {
+                    acharPinoVerdeLocal(tela, x0, y0, x1, y1, modelo, refVerde)
+                } else {
+                    null
+                }
+                if (verdeRetomada != null) {
+                    val posRetomada = verdeRetomada.posicao
+                    val distRetomada = hypot(
+                        ((x0 + posRetomada.first) - cx).toDouble(),
+                        ((y0 + posRetomada.second) - cy).toDouble()
+                    ).toFloat()
                     fase = FaseNavegacao.CAMINHANDO
-                    ultimoVerdeRel = refVerde
-                    ultimoPosPinoConhecidaRel = refVerde
+                    ultimoVerdeRel = posRetomada
+                    ultimoPosPinoConhecidaRel = posRetomada
                     ultimoPosPinoEraVerde = true
                     vistoVerde = true
+                    ultimoQtdVerde = verdeRetomada.quantidade
+                    ultimoRgbVerde = verdeRetomada.rgbMedio
+                    ultimaDistVerde = distRetomada
+                    if (menorDistVerde < 0f || distRetomada < menorDistVerde) {
+                        menorDistVerde = distRetomada
+                    }
                     retomarVerdeAte = agora + 2000L
                     iniciouCaminhadaEm = agora
                     tempoMaxPinoMs = calcularTempoMaxPinoMs(
-                        if (ultimaDistVerde > 0f) ultimaDistVerde else pixelsPorCasa * 4f
+                        if (distRetomada > 0f) distRetomada else pixelsPorCasa * 4f
                     )
                     LogRota.registrarPasso(context, "AUTOLOOT ignorado: luta curta - retomando caminhada", tela)
                     return "AUTOLOOT ignorado: luta curta - retomando caminhada"
