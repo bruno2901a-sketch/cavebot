@@ -37,6 +37,8 @@ import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import java.util.concurrent.atomic.AtomicBoolean
 
+private class ToqueNaoExecutadoException(message: String) : RuntimeException(message)
+
 class BotService : Service() {
     companion object {
         const val ACAO_INICIAR = "com.rotabot.INICIAR"
@@ -165,6 +167,10 @@ class BotService : Service() {
             if (!rodando) return
             try {
                 executarCiclo()
+            } catch (e: ToqueNaoExecutadoException) {
+                ultimoToque = e.message ?: "Toque não executado"
+                registrarStatus("Toque não executado; repetindo a etapa")
+                LogRota.registrarPasso(this@BotService, ultimoToque, ultimoFrameLog)
             } catch (e: OutOfMemoryError) {
                 android.util.Log.e("RotaBot", "Memória insuficiente durante o ciclo", e)
                 RelatorioErro.registrar(this@BotService, "OutOfMemoryError no ciclo", e)
@@ -451,11 +457,11 @@ class BotService : Service() {
     private fun tocarNaTela(x: Float, y: Float) {
         if (soAlarme || pausaManual || encerramentoEmAndamento.get()) {
             ultimoToque = "Toque bloqueado: rota em pausa ou modo somente alarme"
-            return
+            throw ToqueNaoExecutadoException(ultimoToque)
         }
         if (processando) {
             ultimoToque = "Toque bloqueado: outro gesto ainda está sendo processado"
-            return
+            throw ToqueNaoExecutadoException(ultimoToque)
         }
         processando = true
         toqueDesde = SystemClock.uptimeMillis()
@@ -467,6 +473,7 @@ class BotService : Service() {
         if (!aceito) {
             processando = false
             ultimoToque = "Toque recusado: serviço de acessibilidade ocupado ou indisponível"
+            throw ToqueNaoExecutadoException(ultimoToque)
         }
     }
 
