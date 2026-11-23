@@ -394,29 +394,29 @@ object Rota {
     }
 
     fun carregar(ctx: Context, inicio: Int, fim: Int, larguraTela: Int) {
+        val catalogo = CatalogoPinos.validar(ctx, inicio, fim)
+        check(catalogo.valido) { catalogo.erro ?: "Catálogo de pinos vazio." }
+
         val lado = (Cal.LADO_ICONE * larguraTela / 2460f)
             .toInt().coerceAtLeast(8)
+        val lista = ArrayList<Modelo>(catalogo.ids.size)
 
-        val lista = ArrayList<Modelo>()
+        for (n in catalogo.ids) {
+            val raw = ctx.assets.open("pins/p%02d.png".format(n)).use {
+                BitmapFactory.decodeStream(it)
+            } ?: error("Não foi possível decodificar o pino $n.")
 
-        for (n in inicio..fim) {
-            val raw = try {
-                ctx.assets.open("pins/p%02d.png".format(n))
-                    .use { BitmapFactory.decodeStream(it) }
-            } catch (_: Exception) {
-                null
-            } ?: continue
-
-            val bmp = if (raw.width == lado && raw.height == lado) {
-                raw
-            } else {
-                Bitmap.createScaledBitmap(raw, lado, lado, true)
+            val bmp = if (raw.width == lado && raw.height == lado) raw
+            else Bitmap.createScaledBitmap(raw, lado, lado, true).also {
+                if (it !== raw) raw.recycle()
             }
-
             lista.add(Modelo(n, bmp))
         }
 
-        modelos = lista
+        check(lista.size == fim - inicio + 1) {
+            "Catálogo incompleto: esperado ${fim - inicio + 1}, carregado ${lista.size}."
+        }
+        modelos = lista.toList()
         resetar()
     }
 
