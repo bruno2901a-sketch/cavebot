@@ -86,7 +86,6 @@ object LogRota {
             msg.contains("PROXIMO_PINO") ||
             msg.contains("FALHA_PINO") ||
             msg.contains("RESUMO_CONTADORES") ||
-            msg.contains("nao ha rota") ||
             msg.contains("falhas=") ||
             msg.contains("sem progresso") ||
             msg.contains("verde sumiu") ||
@@ -101,7 +100,6 @@ object LogRota {
 
     private fun motivoFalha(msg: String): String? {
         val motivos = listOf(
-            "nao ha rota",
             "sem progresso",
             "verde sumiu",
             "nao localizado",
