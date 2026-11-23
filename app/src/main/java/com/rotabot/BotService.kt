@@ -181,8 +181,6 @@ class BotService : Service() {
     @Volatile private var processando = false
     @Volatile private var toqueDesde = 0L
     @Volatile private var ultimoToque = ""
-    @Volatile private var ultimoFrameEm = 0L
-    @Volatile private var ultimaRecriacaoCapturaEm = 0L
     private var ultimoFrameLog: Bitmap? = null
     private var inicio = 1
     private var fim = 5
@@ -397,8 +395,6 @@ class BotService : Service() {
         pausaManual = false
         processando = false
         ultimoToque = ""
-        ultimoFrameEm = 0L
-        ultimaRecriacaoCapturaEm = 0L
         EstadoBotController.definir(EstadoBot.PRONTO)
         criarOverlay()
     }
@@ -461,7 +457,6 @@ class BotService : Service() {
             // Aguarda o próximo quadro sem sinalizar falha nem reiniciar a projeção.
             return
         }
-        ultimoFrameEm = agora
 
 
         try {
@@ -641,8 +636,6 @@ class BotService : Service() {
                         Rota.resetar()
                         Rota.cancelarAutoloot = false
                         val agoraInicio = SystemClock.uptimeMillis()
-                        ultimoFrameEm = agoraInicio
-                        ultimaRecriacaoCapturaEm = 0L
                         rotaIniciada = true
                         rodando = true
                         pausaManual = false
