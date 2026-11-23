@@ -3,6 +3,17 @@ package com.rotabot
 import android.graphics.Bitmap
 import kotlin.math.sqrt
 
+object MapaEngine {
+    fun ehPixelVerde(p: Int): Boolean {
+        val r = (p shr 16) and 0xFF
+        val g = (p shr 8) and 0xFF
+        val b = p and 0xFF
+        return g >= Cal.VERDE_G_MIN && r <= Cal.VERDE_R_MAX && b <= Cal.VERDE_B_MAX
+    }
+
+    fun ehPixelVerdeCaixa(p: Int): Boolean = ehPixelVerde(p)
+}
+
 object Cal {
     const val LADO_ICONE = 26
     const val LIMIAR = 0.90f
