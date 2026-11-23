@@ -820,7 +820,7 @@ class BotService : Service() {
         return NotificationCompat.Builder(this, CANAL)
             .setContentTitle("RotaBot")
             .setContentText(texto)
-            .setSmallIcon(android.R.drawable.ic_menu_compass)
+            .setSmallIcon(R.drawable.ic_stat_rotabot)
             .setContentIntent(abrirPending)
             .setOngoing(true)
             .addAction(iconePausa, acaoPausa, alternarPending)
