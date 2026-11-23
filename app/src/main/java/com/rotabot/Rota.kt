@@ -916,6 +916,15 @@ object Rota {
         return if (c != null) "${c.first},${c.second}" else "N/A"
     }
 
+    private fun obterCruzMinimapaFresca(fallbackTela: Bitmap): String {
+        val quadro = capturarQuadroFresco(fallbackTela)
+        return try {
+            obterCruzMinimapaSegura(quadro)
+        } finally {
+            if (quadro !== fallbackTela && !quadro.isRecycled) quadro.recycle()
+        }
+    }
+
     private fun clicarLootComRetry(x: Float, y: Float): Pair<Boolean, String> {
         var ultimo = Pair(false, "Toque não executado")
         repeat(3) { tentativa ->
@@ -1042,7 +1051,7 @@ object Rota {
             }
 
             val inicioCorpoMs = SystemClock.uptimeMillis()
-            val cruzAntes = obterCruzMinimapaSegura(tela)
+            val cruzAntes = obterCruzMinimapaFresca(tela)
 
             // Um unico gesto por corpo evita double-tap ou comando de caminhada ate o corpo.
             val gestoCorpo = clicarLootComRetry(cand.px, cand.py)
@@ -1097,7 +1106,7 @@ object Rota {
             }
 
             if (!janelaAberta) {
-                val cruzDepois = obterCruzMinimapaSegura(tela)
+                val cruzDepois = obterCruzMinimapaFresca(tela)
                 LogRota.registrarPasso(
                     context,
                     "corpo ${idxCorpo + 1}: itens=0 pegos=0 janela=fechada cruzAntes=$cruzAntes cruzDepois=$cruzDepois",
