@@ -8,6 +8,7 @@ import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.sqrt
+import java.util.Locale
 
 private enum class FaseNavegacao {
     ESCOLHER,
@@ -274,7 +275,7 @@ object Rota {
         val lista = ArrayList<Modelo>(catalogo.ids.size)
 
         for (n in catalogo.ids) {
-            val raw = ctx.assets.open("pins/p%02d.png".format(n)).use {
+            val raw = ctx.assets.open("pins/p%02d.png".format(Locale.ROOT, n)).use {
                 BitmapFactory.decodeStream(it)
             } ?: error("Não foi possível decodificar o pino $n.")
 
@@ -962,7 +963,7 @@ object Rota {
             val diff = if (corteAntes != null) calcularDiferencaMediaRecorte(corteAntes, corteDepois) else 0.0
             val piso = variacaoMaxCasasLuta[i].coerceIn(1.5, Cal.PISO_ANIMACAO_MAX_PX)
             if (i > 0) detalhesAvaliacao.append(";")
-            detalhesAvaliacao.append("c${i + 1}(diff=${"%.2f".format(diff)}/piso=${"%.2f".format(piso)})")
+            detalhesAvaliacao.append("c${i + 1}(diff=${"%.2f".format(Locale.ROOT, diff)}/piso=${"%.2f".format(Locale.ROOT, piso)})")
             if (corteAntes != null && diff > piso) {
                 val dist = hypot((cxCasa - centro.first).toDouble(), (cyCasa - centro.second).toDouble())
                 candidatas.add(CandidataCasa(i, cxCasa, cyCasa, dist, diff, piso))
@@ -1045,7 +1046,7 @@ if (!gestoCorpo.first) {
             cliquesCount++
             LogRota.registrarPasso(
                 context,
-                "AUTOLOOT corpo ${idxCorpo + 1}/${ordenadas.size} casa=${cand.indiceCasa + 1} diff=${"%.2f".format(cand.diff)} ${cand.px.toInt()},${cand.py.toInt()}",
+                "AUTOLOOT corpo ${idxCorpo + 1}/${ordenadas.size} casa=${cand.indiceCasa + 1} diff=${"%.2f".format(Locale.ROOT, cand.diff)} ${cand.px.toInt()},${cand.py.toInt()}",
                 tela
             )
 
@@ -1201,14 +1202,14 @@ if (!gestoItem.first) {
         progresso: Int,
         extra: String? = null
     ): String {
-        val distStr = if (distPx >= 0f) "%.1fpx".format(distPx) else "N/A"
-        val scoreStr = "%.2f".format(score)
+        val distStr = if (distPx >= 0f) "%.1fpx".format(Locale.ROOT, distPx) else "N/A"
+        val scoreStr = "%.2f".format(Locale.ROOT, score)
         val rgbStr = if (rgbVerde != null) {
             "rgb(${rgbVerde.first},${rgbVerde.second},${rgbVerde.third})"
         } else {
             "rgb(0,0,0)"
         }
-        val diffStr = "%.2f".format(ultimaDiffMinimapa)
+        val diffStr = "%.2f".format(Locale.ROOT, ultimaDiffMinimapa)
         val base = "fase=$faseNome | pino=$pinoId | acerto=$scoreStr | verde=$qtdVerde | $rgbStr | dist=$distStr | semProgresso=$progresso | diffMini=$diffStr"
         return if (extra != null && extra.isNotEmpty()) "$base | $extra" else base
     }
@@ -1284,7 +1285,7 @@ if (!gestoItem.first) {
         ultimoVolume = volume
         if (!versaoRegistradaNoLog) {
             versaoRegistradaNoLog = true
-            val linhaVersao = "VERSAO Rota 1.7.0 | LIMIAR=${"%.2f".format(Cal.LIMIAR)} | LIMIAR_VERDE=${"%.2f".format(Cal.LIMIAR_VERDE)} | MARGEM_VERDE=${"%.2f".format(Cal.MARGEM_VERDE)} | INTERVALO_CLIQUE=${intervaloCliqueMs} | tela=${tela.width}x${tela.height}"
+            val linhaVersao = "VERSAO Rota 1.7.0 | LIMIAR=${"%.2f".format(Locale.ROOT, Cal.LIMIAR)} | LIMIAR_VERDE=${"%.2f".format(Locale.ROOT, Cal.LIMIAR_VERDE)} | MARGEM_VERDE=${"%.2f".format(Locale.ROOT, Cal.MARGEM_VERDE)} | INTERVALO_CLIQUE=${intervaloCliqueMs} | tela=${tela.width}x${tela.height}"
             LogRota.registrarPasso(context, linhaVersao, tela)
         }
         val texto = passoInterno(tela, context, usaLoot, usaAlerta, uriSom, volume, tocar)
@@ -2141,7 +2142,7 @@ if (!gestoItem.first) {
             val avaliacao = avaliarPinoVerdeComModelos(tela, x0, y0, x1, y1, verde.posicao, modelo)
             if (avaliacao.valido) {
                 val rivalInfo = if (avaliacao.rivalIndice != null) {
-                    "rival=#${avaliacao.rivalIndice}(${"%.2f".format(avaliacao.rivalScore)}) margem=${"%+.2f".format(avaliacao.margem)}"
+                    "rival=#${avaliacao.rivalIndice}(${"%.2f".format(Locale.ROOT, avaliacao.rivalScore)}) margem=${"%+.2f".format(Locale.ROOT, avaliacao.margem)}"
                 } else {
                     "rival=nenhum"
                 }
@@ -2173,7 +2174,7 @@ if (!gestoItem.first) {
             )
             val avaliacaoCandidato = avaliarPinoVerdeComModelos(tela, x0, y0, x1, y1, refCentroRel, modelo)
             if (avaliacaoCandidato.rivalIndice != null) {
-                "rival=#${avaliacaoCandidato.rivalIndice}(${"%.2f".format(avaliacaoCandidato.rivalScore)}) margem=${"%+.2f".format(avaliacaoCandidato.margem)}"
+                "rival=#${avaliacaoCandidato.rivalIndice}(${"%.2f".format(Locale.ROOT, avaliacaoCandidato.rivalScore)}) margem=${"%+.2f".format(Locale.ROOT, avaliacaoCandidato.margem)}"
             } else {
                 "rival=nenhum"
             }
