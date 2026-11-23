@@ -2409,6 +2409,7 @@ if (!gestoItem.first) {
 
         val posicoesCandidatas = HashMap<Int, Pair<Int, Int>>()
         val origensVerdes = HashSet<Int>()
+        val scoresTemplate = HashMap<Int, Double>()
 
         fun avaliarCandidato(idxCandidato: Int?): Pair<Boolean, Float>? {
             if (idxCandidato == null || idxCandidato !in modelos.indices) return null
@@ -2418,6 +2419,7 @@ if (!gestoItem.first) {
                 tela, x0, y0, x1, y1, modeloCandidato, cx, cy
             )
             val posTemplate = buscaTemplate.first
+            scoresTemplate[idxCandidato] = buscaTemplate.second
             if (posTemplate != null && buscaTemplate.second >= Cal.LIMIAR.toDouble()) {
                 val distTemplate = hypot(
                     (posTemplate.first - cx).toDouble(),
@@ -2454,6 +2456,24 @@ if (!gestoItem.first) {
         }
 
         val resEsperado = avaliarCandidato(esperadoIdx)
+        if (resEsperado != null && esperadoIdx != null) {
+            val rivalIdx = if (direcaoIda) refIdx - 1 else refIdx + 1
+            if (rivalIdx in modelos.indices && rivalIdx != esperadoIdx) {
+                avaliarCandidato(rivalIdx)
+                val scoreEsperado = scoresTemplate[esperadoIdx] ?: -1.0
+                val scoreRival = scoresTemplate[rivalIdx] ?: -1.0
+                if (scoreEsperado >= Cal.LIMIAR && scoreRival >= Cal.LIMIAR &&
+                    kotlin.math.abs(scoreEsperado - scoreRival) < 0.05
+                ) {
+                    LogRota.registrarPasso(
+                        context,
+                        "RESYNC recusado: templates ambiguos entre pinos ${modelos[esperadoIdx].indice} e ${modelos[rivalIdx].indice}",
+                        tela
+                    )
+                    return null
+                }
+            }
+        }
         val escolhidoIdx: Int? = if (resEsperado != null) {
             esperadoIdx
         } else {
