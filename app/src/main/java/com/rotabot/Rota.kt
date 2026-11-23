@@ -941,12 +941,29 @@ object Rota {
         val candidatas = ArrayList<CandidataCasa>()
         val detalhesAvaliacao = StringBuilder()
 
+        // A espera inicial do autoloot pode deixar o bitmap recebido desatualizado.
+        // Captura um quadro novo e extrai todos os recortes antes de liberar a imagem.
+        val cortesDepois = Array(8) { DoubleArray(0) }
+        val quadroComparacao = capturarQuadroFresco(tela)
+        try {
+            for (i in 0 until 8) {
+                val d = deltas[i]
+                cortesDepois[i] = extrairRecorteCasa(
+                    quadroComparacao, centro.first, centro.second, d.first, d.second, ladoCasa
+                )
+            }
+        } finally {
+            if (quadroComparacao !== tela && !quadroComparacao.isRecycled) {
+                quadroComparacao.recycle()
+            }
+        }
+
         for (i in 0 until 8) {
             val d = deltas[i]
             val cxCasa = centro.first + d.first * ladoCasa
             val cyCasa = centro.second + d.second * ladoCasa
             val corteAntes = recortesCasasLuta[i]
-            val corteDepois = extrairRecorteCasa(tela, centro.first, centro.second, d.first, d.second, ladoCasa)
+            val corteDepois = cortesDepois[i]
             val diff = if (corteAntes != null) calcularDiferencaMediaRecorte(corteAntes, corteDepois) else 0.0
             val piso = variacaoMaxCasasLuta[i].coerceIn(1.5, Cal.PISO_ANIMACAO_MAX_PX)
             if (i > 0) detalhesAvaliacao.append(";")
