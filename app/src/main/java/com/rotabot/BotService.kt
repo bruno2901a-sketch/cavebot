@@ -24,6 +24,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.os.SystemClock
 import android.util.DisplayMetrics
 import android.view.Gravity
@@ -150,6 +151,7 @@ class BotService : Service() {
     private var usaAlerta = true
     private var soAlarme = false
     private var volumeAlerta = 80
+    private var wakeLock: PowerManager.WakeLock? = null
     private var uriSomAlerta = ""
 
     private val projectionCallback = object : MediaProjection.Callback() {
@@ -256,6 +258,15 @@ class BotService : Service() {
         encerramentoEmAndamento.set(false)
         EstadoBotController.definir(EstadoBot.PREPARANDO)
         iniciarNotificacao()
+        try {
+            val power = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RotaBot:Execucao").apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("RotaBot", "Nao foi possivel adquirir WakeLock", e)
+        }
         if (rodando) return
         inicio = intent.getIntExtra(EXTRA_INICIO, 1).coerceIn(1, Cal.TOTAL_ICONES)
         fim = intent.getIntExtra(EXTRA_FIM, 5).coerceIn(inicio, Cal.TOTAL_ICONES)
@@ -672,6 +683,7 @@ class BotService : Service() {
             virtualDisplay = null
             try { imageReader?.close() } catch (_: Exception) {}
             imageReader = null
+            try { projection?.unregisterCallback(projectionCallback) } catch (_: Exception) {}
             try { projection?.stop() } catch (_: Exception) {}
             projection = null
         }
@@ -687,6 +699,13 @@ class BotService : Service() {
         workerHandler.removeCallbacks(ciclo)
         liberarCaptura()
         removerOverlay()
+        try {
+            wakeLock?.let { if (it.isHeld) it.release() }
+        } catch (e: Exception) {
+            android.util.Log.w("RotaBot", "Falha ao liberar WakeLock", e)
+        } finally {
+            wakeLock = null
+        }
         registrarStatus(motivo)
         // O worker pode ainda estar lendo a miniatura; libera tudo depois do ciclo atual.
         workerHandler.post {
