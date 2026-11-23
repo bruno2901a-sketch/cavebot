@@ -1114,8 +1114,7 @@ object Rota {
         )
 
         if (candidatas.isEmpty()) {
-            LogRota.registrarPasso(context, "AUTOLOOT nenhuma casa mudou acima do piso", tela)
-            autoloots++
+            LogRota.registrarPasso(context, "AUTOLOOT nenhuma casa mudou acima do piso; nenhuma coleta confirmada", tela)
             val durSeg = (SystemClock.uptimeMillis() - inicioMs) / 1000L
             LogRota.registrarPasso(
                 context,
@@ -1126,6 +1125,7 @@ object Rota {
         }
 
         val ordenadas = candidatas.sortedBy { it.distCentro }
+        var totalItensPegos = 0
         val refX = (refBarraTituloX * larguraTela).toInt()
         val refY = (refBarraTituloY * alturaTela).toInt()
 
@@ -1175,7 +1175,11 @@ if (!gestoCorpo.first) {
                 )
                 return
             }
-            ToqueService.clicar(cand.px, cand.py, 30L)
+            val gestoAbertura = ToqueService.clicarEAguardar(cand.px, cand.py, 30L)
+            if (!gestoAbertura.first) {
+                LogRota.registrarPasso(context, "AUTOLOOT segundo toque no corpo falhou: " + gestoAbertura.second, tela)
+                continue
+            }
             cliquesCount++
             LogRota.registrarPasso(
                 context,
@@ -1307,6 +1311,7 @@ if (!gestoItem.first) {
                 }
             }
 
+            totalItensPegos += itensPegos
             val cruzDepois = obterCruzMinimapaSegura(tela)
             LogRota.registrarPasso(
                 context,
@@ -1315,11 +1320,11 @@ if (!gestoItem.first) {
             )
         }
 
-        autoloots++
+        if (totalItensPegos > 0) autoloots++
         val durSeg = (SystemClock.uptimeMillis() - inicioMs) / 1000L
         LogRota.registrarPasso(
             context,
-            "AUTOLOOT fim ${durSeg}s cliques=$cliquesCount cancelado=nao",
+            "AUTOLOOT fim ${durSeg}s cliques=$cliquesCount itensPegos=$totalItensPegos cancelado=nao",
             tela
         )
     }
