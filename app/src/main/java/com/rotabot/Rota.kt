@@ -1257,7 +1257,7 @@ if (!gestoItem.first) {
         }
         val agora = SystemClock.uptimeMillis()
         val limiteSeg = (limiteAlarmeMs / 1000L).coerceAtLeast(1L)
-        if (temMonstro(tela)) {
+        if (avaliarLutaComConfirmacao(tela, context, agora)) {
             quadrosSemMonstroAlarme = 0
             if (presencaDesde == 0L) {
                 presencaDesde = agora
@@ -1538,7 +1538,7 @@ if (!gestoItem.first) {
             if (inicioPresencaLutaMs == 0L) {
                 inicioPresencaLutaMs = agora
             }
-            if (!lutaConfirmadaAtiva && quadrosPresencaLutaSeguidos >= 3 && (agora - inicioPresencaLutaMs) >= 300L) {
+            if (!lutaConfirmadaAtiva && quadrosPresencaLutaSeguidos >= 2 && (agora - inicioPresencaLutaMs) >= 150L) {
                 lutaConfirmadaAtiva = true
                 prepararCapturaCasasAntesLuta(tela)
                 LogRota.registrarPasso(context, "BATALHA_INICIO linhasOcupadas=$linhasNovo", tela)
@@ -1553,7 +1553,7 @@ if (!gestoItem.first) {
                 if (inicioAusenciaLutaMs == 0L) {
                     inicioAusenciaLutaMs = agora
                 }
-                if ((agora - inicioAusenciaLutaMs) >= 600L) {
+                if ((agora - inicioAusenciaLutaMs) >= 300L) {
                     lutaConfirmadaAtiva = false
                     inicioAusenciaLutaMs = 0L
                     salvouQuadroInicioLuta = false
@@ -1757,7 +1757,36 @@ if (!gestoItem.first) {
             .toInt().coerceIn(y0 + 1, tela.height)
 
         val cruz = acharCruz(tela, x0, y0, x1, y1)
-            ?: return "SEM CRUZ NO MINIMAPA (pausado)"
+        if (cruz == null) {
+            val agoraSemCruz = SystemClock.uptimeMillis()
+            val batalhaSemCruz = if (agoraSemCruz >= ignorarLutaAte) avaliarLutaComConfirmacao(tela, context, agoraSemCruz) else false
+            if (batalhaSemCruz) {
+                if (!estavaEmLuta) {
+                    estavaEmLuta = true
+                    tempoInicioLuta = agoraSemCruz
+                    estavaEmLutaCaminhando = (fase == FaseNavegacao.CAMINHANDO)
+                    verdeRelAntesDaLuta = ultimoVerdeRel
+                    estadoLogLutaAlarme = 0
+                }
+                val duracao = (agoraSemCruz - tempoInicioLuta).coerceAtLeast(0L)
+                val segundos = duracao / 1000L
+                if (usaAlerta && duracao >= limiteAlarmeMs) {
+                    BotService.tocarAlarme(context, uriSom, volume)
+                    if (estadoLogLutaAlarme != 1) {
+                        estadoLogLutaAlarme = 1
+                        LogRota.registrarPasso(context, "ALARME: batalha há " + segundos + "s (sem cruz)", tela)
+                    }
+                    return "ALARME: batalha há " + segundos + "s (sem cruz)"
+                }
+                return "LUTA " + segundos + "s - sem cruz no minimapa"
+            }
+            if (estavaEmLuta) {
+                if (estadoLogLutaAlarme == 1) BotService.pararAlarme()
+                return "BATALHA ENCERRADA - aguardando cruz para retomar"
+            }
+            if (usaAlerta) BotService.pararAlarme()
+            return "SEM CRUZ NO MINIMAPA (pausado)"
+        }
 
         val cx = cruz.first.toFloat()
         val cy = cruz.second.toFloat()
@@ -2926,7 +2955,7 @@ if (!gestoItem.first) {
 
     fun temMonstro(tela: Bitmap): Boolean {
         val linhas = contarLinhasOcupadasBattle(tela)
-        return linhas > 0
+        return BatalhaEngine.confirmarPresenca(linhas, BatalhaEngine.temMonstroLegado(tela))
     }
 
     fun acharCruz(
