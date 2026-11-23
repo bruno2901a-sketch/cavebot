@@ -1848,7 +1848,9 @@ if (!gestoItem.first) {
                 naoVisto = 0
 
                 val verdeRetomada = if (veioDeCaminhando && refVerde != null) {
-                    acharPinoVerdeLocal(tela, x0, y0, x1, y1, modelo, refVerde)
+                    modelos.getOrNull(alvo)?.let { modeloAtual ->
+                        acharPinoVerdeLocal(tela, x0, y0, x1, y1, modeloAtual, refVerde)
+                    }
                 } else {
                     null
                 }
