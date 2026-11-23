@@ -159,11 +159,13 @@ class BotService : Service() {
         when (intent?.action) {
             ACAO_INICIAR -> iniciar(intent)
             ACAO_PAUSAR -> {
+                Rota.iniciarPausaManual()
                 pausaManual = true
                 EstadoBotController.definir(EstadoBot.PAUSADO)
                 Rota.cancelarAutoloot = true
             }
             ACAO_RETOMAR -> {
+                Rota.compensarPausaManual()
                 Rota.cancelarAutoloot = false
                 pausaManual = false
                 EstadoBotController.definir(if (rodando) EstadoBot.NAVEGANDO else EstadoBot.PRONTO)
@@ -518,10 +520,12 @@ class BotService : Service() {
                     } else {
                         val novaPausa = !pausaManual
                         if (novaPausa) {
+                            Rota.iniciarPausaManual()
                             Rota.cancelarAutoloot = true
                             pausaManual = true
                             EstadoBotController.definir(EstadoBot.PAUSADO)
                         } else {
+                            Rota.compensarPausaManual()
                             Rota.cancelarAutoloot = false
                             pausaManual = false
                             EstadoBotController.definir(EstadoBot.NAVEGANDO)
