@@ -1711,16 +1711,21 @@ if (!gestoItem.first) {
             }
         }
 
-        val resultadoRecuperacao = tratarEsgotamentoPinoSemPulo(agora, pinoId, context, tela)
-        val motivoRecuperacao = when {
-            pausadoPorPinoPerdido -> "PAUSADO_POR_PINO_PERDIDO"
-            Cal.PERMITIR_PULO && resultadoRecuperacao -> "PULOU_PINO_POR_CONFIGURACAO"
-            resultadoRecuperacao -> "RECUPERACAO_VOLTOU_PINO_ANTERIOR"
-            else -> "RECUPERACAO_SEM_AVANCO"
-        }
-        return formatarLog(
-            fase.name, pinoId, melhorScore, ultimoQtdVerde, ultimoRgbVerde,
-            ultimaDistVerde, semProgresso, motivoRecuperacao
+        // Uma escada completa sem localizar o pino conta como uma falha.
+        // O limite MAX_FALHAS_PINO passa a valer também para pino ausente/sem progresso,
+        // não apenas para o antigo caso "nao ha rota".
+        return registrarFalhaPino(
+            agora = agora,
+            faseNome = fase.name,
+            pinoId = pinoId,
+            score = melhorScore,
+            qtdVerde = ultimoQtdVerde,
+            rgbVerde = ultimoRgbVerde,
+            distPx = ultimaDistVerde,
+            progressoAntesReset = semProgresso,
+            motivo = "pino nao localizado apos escada de recuperacao",
+            context = context,
+            tela = tela
         )
     }
 
