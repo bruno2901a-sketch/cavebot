@@ -146,6 +146,7 @@ object Rota {
     private var ultimoUriSom = ""
     private var ultimoVolume = 80
     private val estadoPino = EstadoPino()
+    private val pausaPinoLock = Any()
     private var quadrosChegada: Int
         get() = estadoPino.quadrosChegada
         set(v) { estadoPino.quadrosChegada = v }
@@ -431,6 +432,8 @@ object Rota {
         if (duracao > 0L) {
             if (tempoInicioLuta > 0L) tempoInicioLuta += duracao
             if (presencaDesde > 0L) presencaDesde += duracao
+            if (inicioPresencaLutaMs > 0L) inicioPresencaLutaMs += duracao
+            if (inicioAusenciaLutaMs > 0L) inicioAusenciaLutaMs += duracao
             if (iniciouCaminhadaEm > 0L) iniciouCaminhadaEm += duracao
             if (retomarVerdeAte > 0L) retomarVerdeAte += duracao
             if (pausadoAte > 0L) pausadoAte += duracao
@@ -439,12 +442,14 @@ object Rota {
         pausaManualDesde = 0L
     }
 
-    fun estaPausadoPorPinoPerdido(): Boolean = pausadoPorPinoPerdido
+    fun estaPausadoPorPinoPerdido(): Boolean = synchronized(pausaPinoLock) { pausadoPorPinoPerdido }
 
     @Synchronized
     fun retomarPausaPinoPerdido() {
-        pausadoPorPinoPerdido = false
-        pausadoAte = 0L
+        synchronized(pausaPinoLock) {
+            pausadoPorPinoPerdido = false
+            pausadoAte = 0L
+        }
         estadoPino.reiniciar(false)
     }
 
@@ -472,8 +477,10 @@ object Rota {
     }
 
     private fun pausarPorPinoPerdido(pinoId: Int, context: Context?, tela: Bitmap?) {
-        pausadoPorPinoPerdido = true
-        pausadoAte = Long.MAX_VALUE
+        synchronized(pausaPinoLock) {
+            pausadoPorPinoPerdido = true
+            pausadoAte = Long.MAX_VALUE
+        }
         fase = FaseNavegacao.ESCOLHER
         if (context != null) {
             if (alertaHabilitado) BotService.tocarAlarme(context, ultimoUriSom, ultimoVolume)
@@ -876,27 +883,21 @@ object Rota {
         return naoFundo >= minimoPixels
     }
 
-    private fun capturarQuadroFresco(fallbackTela: Bitmap): Bitmap {
-        val captor = capturadorQuadroLoot
-        if (captor != null) {
-            val fresco = try {
-                captor.invoke()
-            } catch (_: Exception) {
-                null
-            }
-            if (fresco != null && !fresco.isRecycled) {
-                return fresco
-            }
+    private fun capturarQuadroFresco(): Bitmap? {
+        val captor = capturadorQuadroLoot ?: return null
+        return try {
+            captor.invoke()?.takeUnless { it.isRecycled }
+        } catch (_: Exception) {
+            null
         }
-        return fallbackTela.copy(fallbackTela.config ?: Bitmap.Config.ARGB_8888, false)
     }
 
-    private fun temMonstroQuadroFresco(fallbackTela: Bitmap): Boolean {
-        val q = capturarQuadroFresco(fallbackTela)
+    private fun temMonstroQuadroFresco(): Boolean? {
+        val q = capturarQuadroFresco() ?: return null
         return try {
             temMonstro(q)
         } finally {
-            if (q !== fallbackTela && !q.isRecycled) q.recycle()
+            if (!q.isRecycled) q.recycle()
         }
     }
 
@@ -909,12 +910,12 @@ object Rota {
         return if (c != null) "${c.first},${c.second}" else "N/A"
     }
 
-    private fun obterCruzMinimapaFresca(fallbackTela: Bitmap): String {
-        val quadro = capturarQuadroFresco(fallbackTela)
+    private fun obterCruzMinimapaFresca(): String {
+        val quadro = capturarQuadroFresco() ?: return "N/A"
         return try {
             obterCruzMinimapaSegura(quadro)
         } finally {
-            if (quadro !== fallbackTela && !quadro.isRecycled) quadro.recycle()
+            if (!quadro.isRecycled) quadro.recycle()
         }
     }
 
@@ -965,7 +966,13 @@ object Rota {
         // A espera inicial do autoloot pode deixar o bitmap recebido desatualizado.
         // Captura um quadro novo e extrai todos os recortes antes de liberar a imagem.
         val cortesDepois = Array(8) { DoubleArray(0) }
-        val quadroComparacao = capturarQuadroFresco(tela)
+        val quadroComparacao = capturarQuadroFresco()
+        if (quadroComparacao == null) {
+            val durSeg = (SystemClock.uptimeMillis() - inicioMs) / 1000L
+            LogRota.registrarPasso(context, "AUTOLOOT cancelado: quadro fresco indisponível para comparar corpos", tela)
+            LogRota.registrarPasso(context, "AUTOLOOT fim ${durSeg}s cliques=$cliquesCount cancelado=sim", tela)
+            return
+        }
         try {
             for (i in 0 until 8) {
                 val d = deltas[i]
@@ -974,9 +981,7 @@ object Rota {
                 )
             }
         } finally {
-            if (quadroComparacao !== tela && !quadroComparacao.isRecycled) {
-                quadroComparacao.recycle()
-            }
+            if (!quadroComparacao.isRecycled) quadroComparacao.recycle()
         }
 
         for (i in 0 until 8) {
@@ -1081,15 +1086,26 @@ object Rota {
                     )
                     return
                 }
-                if (temMonstroQuadroFresco(tela)) {
+                val monstroAtual = temMonstroQuadroFresco()
+                if (monstroAtual == null) {
+                    LogRota.registrarPasso(context, "AUTOLOOT interrompido: captura indisponível", tela)
+                    val durSeg = (SystemClock.uptimeMillis() - inicioMs) / 1000L
+                    LogRota.registrarPasso(context, "AUTOLOOT fim ${durSeg}s cliques=$cliquesCount cancelado=sim", tela)
+                    return
+                }
+                if (monstroAtual) {
                     registrarInterrupcaoMonstro()
                     return
                 }
-                val q = capturarQuadroFresco(tela)
+                val q = capturarQuadroFresco()
+                if (q == null) {
+                    if (!esperarFatiado(80L, inicioMs, context, tela, cliquesCount)) return
+                    continue
+                }
                 val aberta = try {
                     janelaLootAbertaPorEscuro(q)
                 } finally {
-                    if (q !== tela && !q.isRecycled) q.recycle()
+                    if (!q.isRecycled) q.recycle()
                 }
                 if (aberta) {
                     janelaAberta = true
@@ -1099,7 +1115,7 @@ object Rota {
             }
 
             if (!janelaAberta) {
-                val cruzDepois = obterCruzMinimapaFresca(tela)
+                val cruzDepois = obterCruzMinimapaFresca()
                 LogRota.registrarPasso(
                     context,
                     "corpo ${idxCorpo + 1}: itens=0 pegos=0 janela=fechada cruzAntes=$cruzAntes cruzDepois=$cruzDepois",
@@ -1108,11 +1124,11 @@ object Rota {
                 continue
             }
 
-            val quadroBarra = capturarQuadroFresco(tela)
+            val quadroBarra = capturarQuadroFresco()
             val barraAchada = try {
-                acharBarraTituloLoot(quadroBarra)
+                quadroBarra?.let { acharBarraTituloLoot(it) }
             } finally {
-                if (quadroBarra !== tela && !quadroBarra.isRecycled) quadroBarra.recycle()
+                quadroBarra?.let { if (!it.isRecycled) it.recycle() }
             }
 
             val usarOffsetBarra = barraAchada != null
@@ -1149,7 +1165,14 @@ object Rota {
                     break
                 }
 
-                if (temMonstroQuadroFresco(tela)) {
+                val monstroAtual = temMonstroQuadroFresco()
+                if (monstroAtual == null) {
+                    LogRota.registrarPasso(context, "AUTOLOOT interrompido: captura indisponível", tela)
+                    val durSeg = (SystemClock.uptimeMillis() - inicioMs) / 1000L
+                    LogRota.registrarPasso(context, "AUTOLOOT fim ${durSeg}s cliques=$cliquesCount cancelado=sim", tela)
+                    return
+                }
+                if (monstroAtual) {
                     registrarInterrupcaoMonstro()
                     return
                 }
@@ -1157,11 +1180,11 @@ object Rota {
                 val lx = (ponto.first * larguraTela + dxBarra).coerceIn(0f, (larguraTela - 1).toFloat())
                 val ly = (ponto.second * alturaTela + dyBarra).coerceIn(0f, (alturaTela - 1).toFloat())
 
-                val qCheckItem = capturarQuadroFresco(tela)
+                val qCheckItem = capturarQuadroFresco() ?: continue
                 val temItemInicial = try {
                     pontoLootTemItem(qCheckItem, lx.toInt(), ly.toInt())
                 } finally {
-                    if (qCheckItem !== tela && !qCheckItem.isRecycled) qCheckItem.recycle()
+                    if (!qCheckItem.isRecycled) qCheckItem.recycle()
                 }
 
                 if (!temItemInicial) continue
@@ -1178,11 +1201,12 @@ if (!gestoItem.first) {
                     cliquesCount++
                     if (!esperarFatiado(intervaloLootMs, inicioMs, context, tela, cliquesCount)) return
 
-                    val qPosClique = capturarQuadroFresco(tela)
+                    val qPosClique = capturarQuadroFresco()
+                    if (qPosClique == null) break
                     val aindaTemItem = try {
                         pontoLootTemItem(qPosClique, lx.toInt(), ly.toInt())
                     } finally {
-                        if (qPosClique !== tela && !qPosClique.isRecycled) qPosClique.recycle()
+                        if (!qPosClique.isRecycled) qPosClique.recycle()
                     }
                     if (!aindaTemItem) {
                         pegouEste = true
@@ -1196,7 +1220,7 @@ if (!gestoItem.first) {
             }
 
             totalItensPegos += itensPegos
-            val cruzDepois = obterCruzMinimapaSegura(tela)
+            val cruzDepois = obterCruzMinimapaFresca()
             LogRota.registrarPasso(
                 context,
                 "corpo ${idxCorpo + 1}: itens=$itensDetectados pegos=$itensPegos cruzAntes=$cruzAntes cruzDepois=$cruzDepois",
@@ -1930,9 +1954,21 @@ if (!gestoItem.first) {
             cliquesVerde = 0
             naoVisto = 0
 
-            // O autoloot pode durar dezenas de segundos. Nunca retome a rota
-            // usando o bitmap e o relógio capturados antes da coleta.
-            val telaPosLoot = if (usaLoot) capturarQuadroFresco(tela) else tela
+            // O autoloot pode durar dezenas de segundos. Sem quadro novo,
+            // não reutiliza a imagem antiga para decidir a retomada da caminhada.
+            val telaPosLoot = if (usaLoot) capturarQuadroFresco() else tela
+            if (telaPosLoot == null) {
+                fase = FaseNavegacao.ESCOLHER
+                retomarVerdeAte = 0L
+                verdeVeioDeTemplate = false
+                ultimoVerdeRel = null
+                ultimoQtdVerde = 0
+                ultimoRgbVerde = null
+                vistoVerde = false
+                falhasPino = 0
+                LogRota.registrarPasso(context, "AUTOLOOT pós-luta sem quadro fresco - aguardando nova imagem", tela)
+                return "AUTOLOOT concluído - aguardando quadro novo"
+            }
             try {
                 val cruzPosLoot = acharCruz(telaPosLoot, x0, y0, x1, y1)
                 val centroXPosLoot = cruzPosLoot?.first?.toFloat() ?: cx
