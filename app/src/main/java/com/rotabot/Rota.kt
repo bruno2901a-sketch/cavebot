@@ -1371,17 +1371,26 @@ if (!gestoItem.first) {
                 var xx = 0
                 while (xx <= bw - faixaW) {
                     var claros = 0
+                    var maiorSequenciaClara = 0
                     for (dy in 0 until faixaH) {
                         val row = (yy + dy) * bw + xx
+                        var sequenciaClara = 0
                         for (dx in 0 until faixaW) {
                             val p = pxBusca[row + dx]
                             val r = (p shr 16) and 0xFF
                             val g = (p shr 8) and 0xFF
                             val b = p and 0xFF
-                            if (r > 155 && g > 145 && b > 125) claros++
+                            if (r > 155 && g > 145 && b > 125) {
+                                claros++
+                                sequenciaClara++
+                                maiorSequenciaClara = max(maiorSequenciaClara, sequenciaClara)
+                            } else {
+                                sequenciaClara = 0
+                            }
                         }
                     }
-                    if (claros > melhorLinhaClaros) {
+                    val sequenciaMinima = (faixaW * 0.35f).toInt().coerceAtLeast(8)
+                    if (claros > melhorLinhaClaros && maiorSequenciaClara >= sequenciaMinima) {
                         melhorLinhaClaros = claros
                         melhorXRel = xx
                         melhorYRel = yy
