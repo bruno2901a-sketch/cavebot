@@ -185,8 +185,8 @@ class BotService : Service() {
         }
     }
 
-    private fun copiarImagemAtual(reader: ImageReader?): Bitmap? = synchronized(capturaLock) {
-        val img = try { reader?.acquireLatestImage() } catch (_: Exception) { null } ?: return@synchronized null
+    private fun copiarImagemAtual(): Bitmap? = synchronized(capturaLock) {
+        val img = try { imageReader?.acquireLatestImage() } catch (_: Exception) { null } ?: return@synchronized null
         try {
             val plane = img.planes[0]
             val rowPixels = plane.rowStride / plane.pixelStride
@@ -200,7 +200,7 @@ class BotService : Service() {
         } catch (_: Exception) { null } finally { img.close() }
     }
 
-    private fun capturarQuadroSobDemanda(): Bitmap? = copiarImagemAtual(imageReader)
+    private fun capturarQuadroSobDemanda(): Bitmap? = copiarImagemAtual()
 
     private fun iniciar(intent: Intent) {
         if (rodando) return
