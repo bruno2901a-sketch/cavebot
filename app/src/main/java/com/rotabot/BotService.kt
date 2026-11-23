@@ -334,7 +334,7 @@ class BotService : Service() {
         }
         ajustarRotacao()
         val agora = SystemClock.uptimeMillis()
-        val frame = copiarImagemAtual(imageReader)
+        val frame = copiarImagemAtual()
         if (frame == null) {
             if (!pausaManual && ultimoFrameEm > 0L && agora - ultimoFrameEm > 3000L) {
                 val segsSemImagem = (agora - ultimoFrameEm) / 1000L
