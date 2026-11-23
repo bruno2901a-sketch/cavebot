@@ -51,32 +51,37 @@ class ToqueService : AccessibilityService() {
                     }
                 }
             }
-            val metrics = DisplayMetrics()
-            @Suppress("DEPRECATION")
-            (service.getSystemService(WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealMetrics(metrics)
-            if (x < 0f || y < 0f || x >= metrics.widthPixels || y >= metrics.heightPixels) {
-                concluir(false, "Coordenada fora da tela: ${x.toInt()},${y.toInt()} / ${metrics.widthPixels}x${metrics.heightPixels}")
-                return false
-            }
-            // Um trajeto só com moveTo tem comprimento zero e vários aparelhos cancelam.
-            // Com um traço de 1 px o toque é aceito como um toque normal.
-            val path = Path().apply {
-                moveTo(x, y)
-                lineTo(x + if (x < metrics.widthPixels - 1f) 1f else -1f, y)
-            }
-            val gesture = GestureDescription.Builder()
-                .addStroke(GestureDescription.StrokeDescription(path, 0L, duracaoMs.coerceAtLeast(1L)))
-                .build()
-            val aceito = service.dispatchGesture(gesture, object : GestureResultCallback() {
-                override fun onCompleted(gestureDescription: GestureDescription?) {
-                    concluir(true, "Gesto concluído em ${x.toInt()},${y.toInt()} (jogo não confirmado)")
+            return try {
+                val metrics = DisplayMetrics()
+                @Suppress("DEPRECATION")
+                (service.getSystemService(WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealMetrics(metrics)
+                if (metrics.widthPixels <= 1 || metrics.heightPixels <= 0 ||
+                    x < 0f || y < 0f || x >= metrics.widthPixels || y >= metrics.heightPixels) {
+                    concluir(false, "Coordenada/tela inválida: ${x.toInt()},${y.toInt()} / ${metrics.widthPixels}x${metrics.heightPixels}")
+                    return false
                 }
-                override fun onCancelled(gestureDescription: GestureDescription?) {
-                    concluir(false, "Android cancelou o toque em ${x.toInt()},${y.toInt()}")
+                // Um trajeto de 1 px evita gestos de comprimento zero.
+                val path = Path().apply {
+                    moveTo(x, y)
+                    lineTo(x + if (x < metrics.widthPixels - 1f) 1f else -1f, y)
                 }
-            }, null)
-            if (!aceito) concluir(false, "Android recusou o gesto em ${x.toInt()},${y.toInt()}")
-            return aceito
+                val gesture = GestureDescription.Builder()
+                    .addStroke(GestureDescription.StrokeDescription(path, 0L, duracaoMs.coerceAtLeast(1L)))
+                    .build()
+                val aceito = service.dispatchGesture(gesture, object : GestureResultCallback() {
+                    override fun onCompleted(gestureDescription: GestureDescription?) {
+                        concluir(true, "Gesto concluído em ${x.toInt()},${y.toInt()} (jogo não confirmado)")
+                    }
+                    override fun onCancelled(gestureDescription: GestureDescription?) {
+                        concluir(false, "Android cancelou o toque em ${x.toInt()},${y.toInt()}")
+                    }
+                }, null)
+                if (!aceito) concluir(false, "Android recusou o gesto em ${x.toInt()},${y.toInt()}")
+                aceito
+            } catch (e: Exception) {
+                concluir(false, "Falha ao enviar gesto: ${e.javaClass.simpleName}")
+                false
+            }
         }
     }
 
@@ -88,6 +93,7 @@ class ToqueService : AccessibilityService() {
     override fun onInterrupt() {}
     override fun onDestroy() {
         instance = null
+        gestoEmAndamento.set(false)
         super.onDestroy()
     }
 }
