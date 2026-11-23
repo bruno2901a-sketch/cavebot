@@ -258,15 +258,24 @@ class BotService : Service() {
         @Suppress("DEPRECATION")
         (getSystemService(WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealMetrics(metrics)
 
-        val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        projection = manager.getMediaProjection(resultCode, data)
-        projection?.registerCallback(projectionCallback, workerHandler)
-        synchronized(capturaLock) {
-            imageReader = ImageReader.newInstance(metrics.widthPixels, metrics.heightPixels, PixelFormat.RGBA_8888, 2)
-            virtualDisplay = projection?.createVirtualDisplay(
-                "RotaBotScreenCapture", metrics.widthPixels, metrics.heightPixels, metrics.densityDpi,
-                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, imageReader?.surface, null, workerHandler
-            )
+        try {
+            val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            projection = manager.getMediaProjection(resultCode, data)
+                ?: throw IllegalStateException("MediaProjection não foi criada")
+            projection?.registerCallback(projectionCallback, workerHandler)
+            synchronized(capturaLock) {
+                imageReader = ImageReader.newInstance(metrics.widthPixels, metrics.heightPixels, PixelFormat.RGBA_8888, 2)
+                virtualDisplay = projection?.createVirtualDisplay(
+                    "RotaBotScreenCapture", metrics.widthPixels, metrics.heightPixels, metrics.densityDpi,
+                    DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, imageReader?.surface, null, workerHandler
+                ) ?: throw IllegalStateException("VirtualDisplay não foi criado")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("RotaBot", "Falha ao iniciar MediaProjection", e)
+            RelatorioErro.registrar(this, "Falha ao iniciar MediaProjection", e)
+            EstadoBotController.definir(EstadoBot.ERRO)
+            pararTudo("Falha na captura: ${e.javaClass.simpleName}")
+            return
         }
         try {
             Rota.carregar(this, inicio, fim, maxOf(metrics.widthPixels, metrics.heightPixels))
