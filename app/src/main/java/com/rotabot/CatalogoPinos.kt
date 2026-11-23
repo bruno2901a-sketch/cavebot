@@ -2,6 +2,7 @@ package com.rotabot
 
 import android.content.Context
 import android.graphics.BitmapFactory
+import java.util.Locale
 
 /**
  * Catálogo validado dos marcadores da rota.
@@ -22,7 +23,7 @@ internal object CatalogoPinos {
         val ids = (inicio..fim).toList()
         for (id in ids) {
             val existe = try {
-                context.assets.open("pins/p%02d.png".format(id)).use { stream ->
+                context.assets.open("pins/p%02d.png".format(Locale.ROOT, id)).use { stream ->
                     val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                     BitmapFactory.decodeStream(stream, null, options)
                     options.outWidth > 0 && options.outHeight > 0
