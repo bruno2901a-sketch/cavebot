@@ -1037,13 +1037,13 @@ object Rota {
             val inicioCorpoMs = SystemClock.uptimeMillis()
             val cruzAntes = obterCruzMinimapaSegura(tela)
 
+            // Um unico gesto por corpo evita double-tap ou comando de caminhada ate o corpo.
             val gestoCorpo = clicarLootComRetry(cand.px, cand.py)
-if (!gestoCorpo.first) {
-    LogRota.registrarPasso(context, "AUTOLOOT toque corpo falhou: " + gestoCorpo.second, tela)
-    continue
-}
+            if (!gestoCorpo.first) {
+                LogRota.registrarPasso(context, "AUTOLOOT toque corpo falhou: " + gestoCorpo.second, tela)
+                continue
+            }
             cliquesCount++
-            if (!esperarFatiado(60L, inicioMs, context, tela, cliquesCount)) return
 
             if (cancelarAutoloot) {
                 val durSeg = (SystemClock.uptimeMillis() - inicioMs) / 1000L
@@ -1054,12 +1054,6 @@ if (!gestoCorpo.first) {
                 )
                 return
             }
-            val gestoAbertura = ToqueService.clicarEAguardar(cand.px, cand.py, 30L)
-            if (!gestoAbertura.first) {
-                LogRota.registrarPasso(context, "AUTOLOOT segundo toque no corpo falhou: " + gestoAbertura.second, tela)
-                continue
-            }
-            cliquesCount++
             LogRota.registrarPasso(
                 context,
                 "AUTOLOOT corpo ${idxCorpo + 1}/${ordenadas.size} casa=${cand.indiceCasa + 1} diff=${"%.2f".format(Locale.ROOT, cand.diff)} ${cand.px.toInt()},${cand.py.toInt()}",
@@ -1079,7 +1073,7 @@ if (!gestoCorpo.first) {
                     return
                 }
                 if (temMonstroQuadroFresco(tela)) {
-                    LogRota.registrarPasso(context, "AUTOLOOT interrompido: monstro apareceu", tela)
+                    registrarInterrupcaoMonstro()
                     return
                 }
                 val q = capturarQuadroFresco(tela)
@@ -1138,6 +1132,8 @@ if (!gestoCorpo.first) {
                 }
                 if (SystemClock.uptimeMillis() - inicioMs >= maxAutolootMs) {
                     LogRota.registrarPasso(context, "AUTOLOOT limite de tempo", tela)
+                    val durSeg = (SystemClock.uptimeMillis() - inicioMs) / 1000L
+                    LogRota.registrarPasso(context, "AUTOLOOT fim ${durSeg}s cliques=$cliquesCount cancelado=sim", tela)
                     return
                 }
                 if (SystemClock.uptimeMillis() - inicioCorpoMs >= Cal.TEMPO_MAX_POR_CORPO_MS) {
@@ -1301,7 +1297,7 @@ if (!gestoItem.first) {
         ultimoVolume = volume
         if (!versaoRegistradaNoLog) {
             versaoRegistradaNoLog = true
-            val linhaVersao = "VERSAO Rota 1.7.0 | LIMIAR=${"%.2f".format(Locale.ROOT, Cal.LIMIAR)} | LIMIAR_VERDE=${"%.2f".format(Locale.ROOT, Cal.LIMIAR_VERDE)} | MARGEM_VERDE=${"%.2f".format(Locale.ROOT, Cal.MARGEM_VERDE)} | INTERVALO_CLIQUE=${intervaloCliqueMs} | tela=${tela.width}x${tela.height}"
+            val linhaVersao = "VERSAO Rota 1.9.4 | LIMIAR=${"%.2f".format(Locale.ROOT, Cal.LIMIAR)} | LIMIAR_VERDE=${"%.2f".format(Locale.ROOT, Cal.LIMIAR_VERDE)} | MARGEM_VERDE=${"%.2f".format(Locale.ROOT, Cal.MARGEM_VERDE)} | INTERVALO_CLIQUE=${intervaloCliqueMs} | tela=${tela.width}x${tela.height}"
             LogRota.registrarPasso(context, linhaVersao, tela)
         }
         val texto = passoInterno(tela, context, usaLoot, usaAlerta, uriSom, volume, tocar)
