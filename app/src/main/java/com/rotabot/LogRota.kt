@@ -319,7 +319,11 @@ object LogRota {
         val valor = linha.substring(1, fimIdx).trim()
         val formatoCompleto = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.ROOT)
         formatoCompleto.isLenient = false
-        formatoCompleto.parse(valor)?.let { return it.time }
+        try {
+            formatoCompleto.parse(valor)?.let { return it.time }
+        } catch (_: Exception) {
+            // Tenta abaixo o formato antigo sem data.
+        }
 
         // Compatibilidade com linhas antigas que guardavam somente a hora.
         val dataHoje = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(Date())
