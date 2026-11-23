@@ -495,6 +495,7 @@ class BotService : Service() {
                 text = "Iniciar"
                 setOnClickListener {
                     if (Rota.estaPausadoPorPinoPerdido()) {
+                        Rota.compensarPausaManual()
                         Rota.retomarPausaPinoPerdido()
                         Rota.cancelarAutoloot = false
                         pausaManual = false
