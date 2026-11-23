@@ -562,12 +562,14 @@ class BotService : Service() {
         if (mudou) statusAtual = msg
         val curto = statusCurto(msg)
         val pinoPerdido = Rota.estaPausadoPorPinoPerdido()
+        val estado = EstadoBotController.atual
         handler.post {
             if (mudou) statusView?.text = "✥ $curto"
             controleRotaView?.text = when {
                 pinoPerdido -> "Retomar"
-                !rotaIniciada -> "Iniciar"
-                pausaManual -> "Retomar"
+                estado == EstadoBot.ENCERRANDO -> "Parando"
+                estado == EstadoBot.PARADO || estado == EstadoBot.ERRO -> "Iniciar"
+                estado == EstadoBot.PAUSADO -> "Retomar"
                 else -> "Pausar"
             }
         }
@@ -759,7 +761,6 @@ class BotService : Service() {
         }
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
-        EstadoBotController.resetar()
     }
 
     private fun iniciarNotificacao() {
@@ -797,6 +798,7 @@ class BotService : Service() {
         pararAlarme()
         pararTudo("Destruído.")
         workerThread.quitSafely()
+        EstadoBotController.resetar()
         super.onDestroy()
     }
 }
