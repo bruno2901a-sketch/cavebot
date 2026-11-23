@@ -191,8 +191,6 @@ object Rota {
     private var candidatoConsistente: Pair<Int, Int>?
         get() = estadoPino.candidatoConsistente
         set(v) { estadoPino.candidatoConsistente = v }
-    private var quadrosMonstro = 0
-    private var ignorarLutaAte = 0L
     private var estavaEmLuta = false
     private var tempoInicioLuta = 0L
     private var estavaEmLutaCaminhando = false
@@ -297,8 +295,6 @@ object Rota {
         resetar()
     }
 
-    fun quantidade(): Int = modelos.size
-
     fun limpar() {
         modelos = emptyList()
         resetar()
@@ -338,7 +334,6 @@ object Rota {
         pausadoAte = 0L
         pausadoPorPinoPerdido = false
         estadoPino.reiniciar(preservarFalhas = false)
-        quadrosMonstro = 0
         ignorarLutaAte = 0L
         estavaEmLuta = false
         tempoInicioLuta = 0L
@@ -1759,7 +1754,7 @@ if (!gestoItem.first) {
         val cruz = acharCruz(tela, x0, y0, x1, y1)
         if (cruz == null) {
             val agoraSemCruz = SystemClock.uptimeMillis()
-            val batalhaSemCruz = if (agoraSemCruz >= ignorarLutaAte) avaliarLutaComConfirmacao(tela, context, agoraSemCruz) else false
+            val batalhaSemCruz = avaliarLutaComConfirmacao(tela, context, agoraSemCruz)
             if (batalhaSemCruz) {
                 if (!estavaEmLuta) {
                     estavaEmLuta = true
@@ -1805,7 +1800,6 @@ if (!gestoItem.first) {
         val monstroDetectado = if (agoraLuta >= ignorarLutaAte) {
             avaliarLutaComConfirmacao(tela, context, agoraLuta)
         } else {
-            quadrosMonstro = 0
             false
         }
 
@@ -1840,7 +1834,7 @@ if (!gestoItem.first) {
             return "LUTA ${segsLuta}s (pausado)"
         }
 
-        if (agoraLuta >= ignorarLutaAte && !pausadoPorPinoPerdido) {
+        if (!pausadoPorPinoPerdido) {
             BotService.pararAlarme()
         }
 
