@@ -293,6 +293,7 @@ class BotService : Service() {
         if (rodando) return
         encerramentoEmAndamento.set(false)
         EstadoBotController.definir(EstadoBot.PREPARANDO)
+        ToqueService.limparPacoteAlvo()
         iniciarNotificacao()
         try {
             val power = getSystemService(Context.POWER_SERVICE) as PowerManager
