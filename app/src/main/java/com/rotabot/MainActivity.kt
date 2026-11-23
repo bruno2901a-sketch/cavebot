@@ -194,10 +194,11 @@ class MainActivity : ComponentActivity() {
             inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
         }
 
-        contadoresResumoView = TextView(this).apply {
+        val contadoresResumo = TextView(this).apply {
             text = "Chegadas: ${Rota.chegadasConfirmadas} | Pulos: ${Rota.pulosPino}"
             textSize = 13f
         }
+        contadoresResumoView = contadoresResumo
 
         val containerAvancado = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -300,7 +301,7 @@ class MainActivity : ComponentActivity() {
         }
 
         tela.addView(titulo)
-        tela.addView(contadoresResumoView)
+        tela.addView(contadoresResumo)
         tela.addView(inicio)
         tela.addView(fim)
         tela.addView(checkLoot)
@@ -371,4 +372,5 @@ class MainActivity : ComponentActivity() {
                 .setCancelable(false)
                 .show()
         }
-    }}
+    }
+}
