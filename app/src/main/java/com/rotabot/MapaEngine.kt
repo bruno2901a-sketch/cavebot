@@ -8,6 +8,9 @@ object Cal {
     const val LIMIAR = 0.90f
     const val LIMIAR_VERDE = 0.78f
     const val MARGEM_VERDE = 0.03f
+    const val VERDE_G_MIN = 170
+    const val VERDE_R_MAX = 89
+    const val VERDE_B_MAX = 89
     const val CHEGOU_FRAC = 0.018f
     const val TOLERANCIA_CHEGADA_CASAS = 1.5f
     const val PERMITIR_PULO = false
