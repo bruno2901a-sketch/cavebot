@@ -337,7 +337,6 @@ object Rota {
         pausadoAte = 0L
         pausadoPorPinoPerdido = false
         estadoPino.reiniciar(preservarFalhas = false)
-        ignorarLutaAte = 0L
         estavaEmLuta = false
         tempoInicioLuta = 0L
         estavaEmLutaCaminhando = false
@@ -494,10 +493,6 @@ object Rota {
         context: Context?,
         tela: Bitmap?
     ): Boolean {
-        if (Cal.PERMITIR_PULO) {
-            proximoPino(agora, "PULOU_POR_FALHAS", context, tela)
-            return true
-        }
         val existePinoAnteriorReal = modelos.size > 1 &&
             ((direcaoIda && alvo > 0) || (!direcaoIda && alvo < modelos.size - 1))
         if (!estadoPino.voltouAoPinoAnteriorParaTentar && existePinoAnteriorReal) {
@@ -1781,11 +1776,7 @@ if (!gestoItem.first) {
         val tempoParadoMs = if (minimapaParadoDesde > 0L) (agora - minimapaParadoDesde) else 0L
 
         val agoraLuta = agora
-        val monstroDetectado = if (agoraLuta >= ignorarLutaAte) {
-            avaliarLutaComConfirmacao(tela, context, agoraLuta)
-        } else {
-            false
-        }
+        val monstroDetectado = avaliarLutaComConfirmacao(tela, context, agoraLuta)
 
         if (monstroDetectado) {
             if (!estavaEmLuta) {
@@ -1841,7 +1832,6 @@ if (!gestoItem.first) {
             tempoInicioLuta = 0L
             estavaEmLutaCaminhando = false
             verdeRelAntesDaLuta = null
-            quadrosMonstro = 0
             salvouQuadroInicioAlarmeLuta = false
 
             if (usaLoot && LootEngine.ignorarLutaCurta(duracaoTotalLutaMs)) {
