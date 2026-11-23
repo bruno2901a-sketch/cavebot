@@ -323,13 +323,6 @@ class MainActivity : Activity() {
         setContentView(rolagem)
     }
 
-    override fun onResume() {
-        super.onResume()
-        findViewById<View>(android.R.id.content)?.post {
-            // Atualiza contadores se visivel
-        }
-    }
-
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putInt("resultado", resultadoCaptura)
