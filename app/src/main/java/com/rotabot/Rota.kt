@@ -838,7 +838,7 @@ object Rota {
                     clarosNaLinha++
                 }
             }
-            if (clarosNaLinha >= 12) {
+            if (clarosNaLinha >= (12f * (tela.width / 2460f)).toInt().coerceAtLeast(4)) {
                 val distBase = hypot(((minX + rw / 2) - base.first).toDouble(), ((minY + yy) - base.second).toDouble())
                 val score = clarosNaLinha - (distBase * 0.25).toInt()
                 if (score > melhorPontuacao) {
@@ -858,7 +858,7 @@ object Rota {
     }
 
     private fun pontoLootTemItem(quadro: Bitmap, lx: Int, ly: Int): Boolean {
-        val raio = 8
+        val raio = (8f * (quadro.width / 2460f)).toInt().coerceAtLeast(2)
         val x0 = (lx - raio).coerceIn(0, quadro.width - 1)
         val y0 = (ly - raio).coerceIn(0, quadro.height - 1)
         val x1 = (lx + raio).coerceIn((x0 + 1).coerceAtMost(quadro.width), quadro.width)
@@ -918,6 +918,10 @@ object Rota {
         val inicioMs = SystemClock.uptimeMillis()
         var cliquesCount = 0
         LogRota.registrarPasso(context, "AUTOLOOT inicio tamCasa=${tamanhoCasaPx.toInt()}px", tela)
+        fun registrarInterrupcaoMonstro() {
+            LogRota.registrarPasso(context, "AUTOLOOT interrompido: monstro apareceu", tela)
+            LogRota.registrarPasso(context, "AUTOLOOT fim interrompido=monstro cancelado=sim", tela)
+        }
 
         if (!esperarFatiado(1000L, inicioMs, context, tela, cliquesCount)) return
 
@@ -1018,7 +1022,7 @@ object Rota {
             }
 
             if (temMonstroQuadroFresco(tela)) {
-                LogRota.registrarPasso(context, "AUTOLOOT interrompido: monstro apareceu", tela)
+                registrarInterrupcaoMonstro()
                 return
             }
 
@@ -1370,7 +1374,7 @@ if (!gestoItem.first) {
                 }
                 yy += 4
             }
-            if (melhorLinhaClaros >= 24 && melhorYRel >= 0) {
+            if (melhorLinhaClaros >= (24f * escalaBusca).toInt().coerceAtLeast(8) && melhorYRel >= 0) {
                 val ax = buscaX0 + melhorXRel
                 val ay = buscaY0 + melhorYRel
                 val aw = faixaW
