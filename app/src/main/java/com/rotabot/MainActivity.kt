@@ -1,6 +1,7 @@
 package com.rotabot
 
 import androidx.activity.ComponentActivity
+import android.Manifest
 import androidx.activity.result.contract.ActivityResultContracts
 import android.app.AlertDialog
 import android.content.Context
@@ -27,6 +28,12 @@ class MainActivity : ComponentActivity() {
     private var uriSomSelecionado: String = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)?.toString() ?: ""
     private var contadoresResumoView: TextView? = null
 
+    private val notificacaoLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { concedida ->
+        if (!concedida) {
+            Toast.makeText(this, "Notificações desativadas; o serviço continuará sem alertas na barra.", Toast.LENGTH_LONG).show()
+        }
+    }
+
     private val capturaLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { resultado ->
         if (resultado.resultCode == RESULT_OK && resultado.data != null) {
             resultadoCaptura = resultado.resultCode
@@ -51,6 +58,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            notificacaoLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
         RelatorioErro.instalar(this)
         val prefs = getSharedPreferences("rotabot_prefs", Context.MODE_PRIVATE)
         uriSomSelecionado = prefs.getString("uri_som", uriSomSelecionado) ?: uriSomSelecionado
