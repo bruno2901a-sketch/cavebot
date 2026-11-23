@@ -507,11 +507,24 @@ class BotService : Service() {
     }
 
     private fun extrairNumeroPino(texto: String): String {
-        val match = Regex("pino=(\\d+)").find(texto)
-        if (match != null) return match.groupValues[1]
-        val matchPinoEspaco = Regex("\\bpino\\s+(\\d+)\\b", RegexOption.IGNORE_CASE).find(texto)
-        if (matchPinoEspaco != null) return matchPinoEspaco.groupValues[1]
-        return "?"
+        val lower = texto.lowercase()
+        val chave = lower.indexOf("pino=")
+        val inicio = if (chave >= 0) chave + 5 else {
+            val espaco = lower.indexOf("pino ")
+            if (espaco >= 0) espaco + 5 else return "?"
+        }
+        return texto.substring(inicio).takeWhile { it.isDigit() }.ifEmpty { "?" }
+    }
+
+    private fun extrairDuracao(texto: String): String? {
+        val lower = texto.lowercase()
+        val inicio = when {
+            lower.startsWith("luta ") -> 5
+            lower.contains("há ") -> lower.indexOf("há ") + 3
+            else -> return null
+        }
+        val numero = texto.substring(inicio).trimStart().takeWhile { it.isDigit() }
+        return numero.takeIf { it.isNotEmpty() }?.plus("s")
     }
 
     private fun statusCurto(texto: String): String {
@@ -521,13 +534,12 @@ class BotService : Service() {
         if (limpa.startsWith("RESYNC", ignoreCase = true)) return "Reajustando pino"
         if (limpa.startsWith("AUTOLOOT", ignoreCase = true)) return "Pegando loot"
         if (limpa.startsWith("ALARME", ignoreCase = true)) {
-            val segMatch = Regex("há\\s+(\\d+s)", RegexOption.IGNORE_CASE).find(limpa)
-            val segStr = segMatch?.groupValues?.get(1) ?: ""
+            val segStr = extrairDuracao(limpa) ?: ""
             return if (segStr.isNotEmpty()) "ALARME $segStr" else "ALARME"
         }
-        val lutaMatch = Regex("^LUTA\\s+(\\d+s)", RegexOption.IGNORE_CASE).find(limpa)
-        if (lutaMatch != null) {
-            return "Luta ${lutaMatch.groupValues[1]}"
+        val duracaoLuta = if (limpa.startsWith("LUTA", ignoreCase = true)) extrairDuracao(limpa) else null
+        if (duracaoLuta != null) {
+            return "Luta $duracaoLuta"
         }
         if (limpa.contains("nao localizado", ignoreCase = true)) {
             val p = extrairNumeroPino(texto)
