@@ -214,7 +214,7 @@ class MainActivity : ComponentActivity() {
         containerAvancado.addView(editIntervaloPino)
 
         val btnAvancado = Button(this).apply {
-            text = "Avançado"
+            text = "Avançado - calibração e temporização"
             setOnClickListener {
                 containerAvancado.visibility = if (containerAvancado.visibility == View.VISIBLE) View.GONE else View.VISIBLE
             }
@@ -226,7 +226,7 @@ class MainActivity : ComponentActivity() {
                 val a = inicio.text.toString().toIntOrNull()
                 val b = fim.text.toString().toIntOrNull()
                 if (a == null || b == null || a !in 1..Cal.TOTAL_ICONES || b !in 1..Cal.TOTAL_ICONES || a > b) {
-                    Toast.makeText(this@MainActivity, "Escolha marcadores válidos (1 a 20).", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this@MainActivity, "Escolha marcadores válidos (1 a ${Cal.TOTAL_ICONES}).", Toast.LENGTH_LONG).show()
                     return@setOnClickListener
                 }
                 if (!Settings.canDrawOverlays(this@MainActivity)) {
@@ -307,21 +307,21 @@ class MainActivity : ComponentActivity() {
         tela.addView(checkLoot)
         tela.addView(checkAlerta)
         tela.addView(checkSoAlarme)
-        tela.addView(labelTempoAlarme)
-        tela.addView(editTempoAlarme)
-        tela.addView(labelIntervaloLoot)
-        tela.addView(editIntervaloLoot)
-        tela.addView(labelMaxAutoloot)
-        tela.addView(editMaxAutoloot)
-        tela.addView(labelPxPorCasa)
-        tela.addView(editPxPorCasa)
-        tela.addView(labelTamCasaPx)
-        tela.addView(editTamCasaPx)
-        tela.addView(labelLimiarParado)
-        tela.addView(editLimiarParado)
-        tela.addView(labelRefBarraTitulo)
-        tela.addView(editRefBarraX)
-        tela.addView(editRefBarraY)
+        containerAvancado.addView(labelTempoAlarme)
+        containerAvancado.addView(editTempoAlarme)
+        containerAvancado.addView(labelIntervaloLoot)
+        containerAvancado.addView(editIntervaloLoot)
+        containerAvancado.addView(labelMaxAutoloot)
+        containerAvancado.addView(editMaxAutoloot)
+        containerAvancado.addView(labelPxPorCasa)
+        containerAvancado.addView(editPxPorCasa)
+        containerAvancado.addView(labelTamCasaPx)
+        containerAvancado.addView(editTamCasaPx)
+        containerAvancado.addView(labelLimiarParado)
+        containerAvancado.addView(editLimiarParado)
+        containerAvancado.addView(labelRefBarraTitulo)
+        containerAvancado.addView(editRefBarraX)
+        containerAvancado.addView(editRefBarraY)
         tela.addView(btnAvancado)
         tela.addView(containerAvancado)
         tela.addView(labelVolume)
