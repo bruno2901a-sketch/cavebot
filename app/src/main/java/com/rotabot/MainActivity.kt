@@ -105,6 +105,11 @@ class MainActivity : ComponentActivity() {
             isChecked = prefs.getBoolean("so_alarme", false)
         }
 
+        val checkCircular = CheckBox(this).apply {
+            text = "Rota circular: do último pino volta ao primeiro"
+            isChecked = prefs.getBoolean("modo_circular", false)
+        }
+
         val labelVolume = TextView(this).apply { text = "Volume do Alerta:" }
         val seekVolume = SeekBar(this).apply {
             max = 100
@@ -270,6 +275,7 @@ class MainActivity : ComponentActivity() {
                     .putBoolean("usa_loot", checkLoot.isChecked)
                     .putBoolean("usa_alerta", checkAlerta.isChecked)
                     .putBoolean("so_alarme", checkSoAlarme.isChecked)
+                    .putBoolean("modo_circular", checkCircular.isChecked)
                     .putInt("volume_alerta", seekVolume.progress)
                     .putString("uri_som", uriSomSelecionado)
                     .putInt("marcador_inicio", a)
@@ -295,6 +301,7 @@ class MainActivity : ComponentActivity() {
                     .putExtra(BotService.EXTRA_USA_LOOT, checkLoot.isChecked)
                     .putExtra(BotService.EXTRA_USA_ALERTA, usaAlertaFinal)
                     .putExtra(BotService.EXTRA_SO_ALARME, modoSoAlarme)
+                    .putExtra(BotService.EXTRA_MODO_CIRCULAR, checkCircular.isChecked)
                     .putExtra(BotService.EXTRA_VOLUME, seekVolume.progress)
                     .putExtra(BotService.EXTRA_URI_SOM, uriSomSelecionado)
                     .putExtra(BotService.EXTRA_ALARME_S, alarmeS)
@@ -319,6 +326,7 @@ class MainActivity : ComponentActivity() {
         tela.addView(checkLoot)
         tela.addView(checkAlerta)
         tela.addView(checkSoAlarme)
+        tela.addView(checkCircular)
         containerAvancado.addView(labelTempoAlarme)
         containerAvancado.addView(editTempoAlarme)
         containerAvancado.addView(labelIntervaloLoot)
