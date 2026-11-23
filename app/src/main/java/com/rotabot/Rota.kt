@@ -27,10 +27,10 @@ object Cal {
     const val BATALHA_Y0 = 0.203f
     const val BATALHA_X1 = 0.181f
     const val BATALHA_Y1 = 0.392f
-    const val SEM_ROTA_X0 = 0.464f
-    const val SEM_ROTA_Y0 = 0.738f
-    const val SEM_ROTA_X1 = 0.559f
-    const val SEM_ROTA_Y1 = 0.827f
+    const val SEM_ROTA_X0 = 0.485f
+    const val SEM_ROTA_Y0 = 0.750f
+    const val SEM_ROTA_X1 = 0.555f
+    const val SEM_ROTA_Y1 = 0.785f
     const val MAX_FALHAS_PINO = 3
     const val IGNORAR_LUTA_MS = 4000L
     const val IGNORAR_SEM_ROTA_MS = 2500L
@@ -367,6 +367,7 @@ object Rota {
         get() = estadoPino.ultimoPosPinoEraVerde
         set(v) { estadoPino.ultimoPosPinoEraVerde = v }
     private var quadrosSemRotaSeguidos = 0
+    private var quadrosPresencaLutaSeguidos = 0
     private var pontoOpcionalMensagemSemRota: Pair<Float, Float>? = null
 
     private var battleAncoraX: Int = -1
@@ -492,6 +493,7 @@ object Rota {
         quadrosSemRotaSeguidos = 0
         inicioPresencaLutaMs = 0L
         inicioAusenciaLutaMs = 0L
+        quadrosPresencaLutaSeguidos = 0
         lutaConfirmadaAtiva = false
         salvouQuadroInicioLuta = false
         salvouQuadroInicioAlarmeLuta = false
@@ -597,9 +599,17 @@ object Rota {
             proximoPino(agora, "PULOU_POR_FALHAS", context, tela)
             return true
         }
-        if (!estadoPino.voltouAoPinoAnteriorParaTentar) {
+        val existePinoAnteriorReal = modelos.size > 1 &&
+            ((direcaoIda && alvo > 0) || (!direcaoIda && alvo < modelos.size - 1))
+        if (!estadoPino.voltouAoPinoAnteriorParaTentar && existePinoAnteriorReal) {
             estadoPino.voltouAoPinoAnteriorParaTentar = true
+            val idAntes = if (alvo in modelos.indices) modelos[alvo].indice else alvo
             voltarPinoAnteriorRespeitandoDirecao()
+            val idDepois = if (alvo in modelos.indices) modelos[alvo].indice else alvo
+            pulosPino++
+            if (context != null) {
+                LogRota.registrarPasso(context, "VOLTOU_PINO de=$idAntes para=$idDepois", tela)
+            }
             fase = FaseNavegacao.ESCOLHER
             iniciouCaminhadaEm = 0L
             pausadoAte = agora + 200L
@@ -755,7 +765,7 @@ object Rota {
             val r = (p shr 16) and 0xFF
             val g = (p shr 8) and 0xFF
             val b = p and 0xFF
-            val ehTextoMensagem = r >= 195 && g >= 195 && b >= 200 && (b - r) in -5..25
+            val ehTextoMensagem = r >= 250 && g >= 250 && b >= 250
             if (ehTextoMensagem) {
                 pixelsTextoClaro++
             }
@@ -773,7 +783,7 @@ object Rota {
             if (!marcadorAtivo) return false
         }
 
-        return pixelsTextoClaro in 40..650
+        return pixelsTextoClaro in 100..600
     }
 
     @Volatile
@@ -941,7 +951,7 @@ object Rota {
             }
         }
         val razao = escuros.toFloat() / px.size.toFloat()
-        return razao >= 0.42f
+        return razao >= 0.15f
     }
 
     private fun acharBarraTituloLoot(quadro: Bitmap): Pair<Int, Int>? {
@@ -1667,12 +1677,13 @@ object Rota {
         )
 
         val temAlgoNovo = linhasNovo > 0
+        if (temAlgoNovo) quadrosPresencaLutaSeguidos++ else quadrosPresencaLutaSeguidos = 0
         if (temAlgoNovo) {
             inicioAusenciaLutaMs = 0L
             if (inicioPresencaLutaMs == 0L) {
                 inicioPresencaLutaMs = agora
             }
-            if (!lutaConfirmadaAtiva && (agora - inicioPresencaLutaMs) >= 300L) {
+            if (!lutaConfirmadaAtiva && quadrosPresencaLutaSeguidos >= 3 && (agora - inicioPresencaLutaMs) >= 300L) {
                 lutaConfirmadaAtiva = true
                 prepararCapturaCasasAntesLuta(tela)
                 LogRota.registrarPasso(context, "BATALHA_INICIO linhasOcupadas=$linhasNovo", tela)
@@ -1956,13 +1967,36 @@ object Rota {
                 estadoLogLutaAlarme = 0
             }
 
-            lutas++
             estavaEmLuta = false
             tempoInicioLuta = 0L
             estavaEmLutaCaminhando = false
             verdeRelAntesDaLuta = null
             quadrosMonstro = 0
             salvouQuadroInicioAlarmeLuta = false
+
+            if (usaLoot && duracaoTotalLutaMs < 2000L) {
+                LogRota.registrarPasso(context, "AUTOLOOT ignorado: luta curta", tela)
+                ultimoClique = 0L
+                pausadoAte = agora + 200L
+                quadrosChegada = 0
+                quadrosSumidoVerde = 0
+                ultimaDist = -1f
+                ultimaDistVerde = -1f
+                menorDistVerde = -1f
+                semProgresso = 0
+                cliquesVerde = 0
+                naoVisto = 0
+                fase = FaseNavegacao.ESCOLHER
+                retomarVerdeAte = 0L
+                verdeVeioDeTemplate = false
+                ultimoVerdeRel = null
+                ultimoQtdVerde = 0
+                ultimoRgbVerde = null
+                vistoVerde = false
+                return "AUTOLOOT ignorado: luta curta"
+            }
+
+            lutas++
 
             val antesLootMs = SystemClock.uptimeMillis()
             if (usaLoot) {
@@ -2057,21 +2091,18 @@ object Rota {
             }
 
             if (agora >= ignorarSemRotaAte && temSemRota(tela)) {
-                quadrosSemRota++
                 quadrosSemRotaSeguidos++
-                if (quadrosSemRotaSeguidos < 4) {
-                    ignorarSemRotaAte = agora + Cal.IGNORAR_SEM_ROTA_MS
-                } else {
+                if (quadrosSemRotaSeguidos >= 2) {
                     quadrosSemRota = 0
                     quadrosSemRotaSeguidos = 0
                     ignorarSemRotaAte = agora + Cal.IGNORAR_SEM_ROTA_MS
+                    falhasPino += 1
                     return registrarFalhaPino(
                         agora, fase.name, indice, melhorScore, ultimoQtdVerde, ultimoRgbVerde,
                         ultimaDistVerde, semProgresso, "nao ha rota", context, tela
                     )
                 }
-            } else if (!temSemRota(tela)) {
-                quadrosSemRota = 0
+            } else {
                 quadrosSemRotaSeguidos = 0
             }
 
