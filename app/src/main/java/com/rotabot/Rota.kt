@@ -460,13 +460,13 @@ object Rota {
         dist: Float,
         estadoMini: EstadoComparacaoMinimapa,
         tempoParadoMs: Long,
-        estadoPino.vistoVerdeParam: Boolean,
-        estadoPino.verdeVeioDeTemplateParam: Boolean
+        vistoVerdeParam: Boolean,
+        verdeVeioDeTemplateParam: Boolean
     ): Boolean {
         val toleranciaCasaPx = Cal.TOLERANCIA_CHEGADA_CASAS * pixelsPorCasa
         val minimapaParadoSuficiente = !estadoMini.emMovimento && tempoParadoMs >= Cal.TEMPO_MINIMO_PARADO_CHEGADA_MS
         val dentroTolerancia = dist >= 0f && dist <= toleranciaCasaPx
-        if (dentroTolerancia && minimapaParadoSuficiente && (estadoPino.vistoVerdeParam || estadoPino.verdeVeioDeTemplateParam)) {
+        if (dentroTolerancia && minimapaParadoSuficiente && (vistoVerdeParam || verdeVeioDeTemplateParam)) {
             estadoPino.quadrosChegada++
             return estadoPino.quadrosChegada >= 2
         }
@@ -2367,14 +2367,14 @@ if (!gestoItem.first) {
     ): Pair<Pair<Int, Int>?, Double> {
         val melhorScoreAnterior = melhorScore
         val ultimoCandidatoAnterior = estadoPino.ultimoCandidatoQuaseLimiar
-        val estadoPino.candidatoConsistenteAnterior = estadoPino.candidatoConsistente
+        val candidatoConsistenteAnterior = estadoPino.candidatoConsistente
         return try {
             val posicao = acharPorTemplate(tela, x0, y0, x1, y1, modelo, cx, cy)
             Pair(posicao, melhorScore)
         } finally {
             melhorScore = melhorScoreAnterior
             estadoPino.ultimoCandidatoQuaseLimiar = ultimoCandidatoAnterior
-            estadoPino.candidatoConsistente = estadoPino.candidatoConsistenteAnterior
+            estadoPino.candidatoConsistente = candidatoConsistenteAnterior
         }
     }
 
