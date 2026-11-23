@@ -125,6 +125,13 @@ class BotService : Service() {
                 } catch (e: Exception) {
                     try { mediaPlayer?.release() } catch (_: Exception) {}
                     mediaPlayer = null
+                    val manager = audioManager
+                    val focus = audioFocusRequest
+                    if (manager != null && focus != null) {
+                        try { manager.abandonAudioFocusRequest(focus) } catch (_: Exception) {}
+                    }
+                    audioManager = null
+                    audioFocusRequest = null
                     android.util.Log.e("RotaBot", "Falha ao iniciar alarme", e)
                     try { LogRota.registrarPasso(ctx, "ALARME_FALHA ${e.javaClass.simpleName}", null) } catch (_: Exception) {}
                 }
