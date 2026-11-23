@@ -1457,13 +1457,7 @@ if (!gestoItem.first) {
                     var runLen = 0
                     for (dx in barraXStart until rw) {
                         val p = px[(yStart + dy) * rw + dx]
-                        val r = (p shr 16) and 0xFF
-                        val g = (p shr 8) and 0xFF
-                        val b = p and 0xFF
-                        val ehCorHp = (g >= 155 && r <= 85 && b <= 90) ||
-                            (r >= 165 && g in 70..225 && b <= 85) ||
-                            (r >= 155 && g <= 75 && b <= 75)
-                        if (ehCorHp) {
+                        if (BatalhaEngine.ehCorHp(p)) {
                             runLen++
                         } else {
                             if (runLen >= minComprimentoBarra) {
@@ -1472,26 +1466,14 @@ if (!gestoItem.first) {
                                 var up = dy - 1
                                 while (up >= 0) {
                                     val pu = px[(yStart + up) * rw + checkX]
-                                    val ru = (pu shr 16) and 0xFF
-                                    val gu = (pu shr 8) and 0xFF
-                                    val bu = pu and 0xFF
-                                    val okU = (gu >= 155 && ru <= 85 && bu <= 90) ||
-                                        (ru >= 165 && gu in 70..225 && bu <= 85) ||
-                                        (ru >= 155 && gu <= 75 && bu <= 75)
-                                    if (!okU) break
+                                    if (!BatalhaEngine.ehCorHp(pu)) break
                                     alturaRun++
                                     up--
                                 }
                                 var dn = dy + 1
                                 while (dn < hLinha) {
                                     val pd = px[(yStart + dn) * rw + checkX]
-                                    val rd = (pd shr 16) and 0xFF
-                                    val gd = (pd shr 8) and 0xFF
-                                    val bd = pd and 0xFF
-                                    val okD = (gd >= 155 && rd <= 85 && bd <= 90) ||
-                                        (rd >= 165 && gd in 70..225 && bd <= 85) ||
-                                        (rd >= 155 && gd <= 75 && bd <= 75)
-                                    if (!okD) break
+                                    if (!BatalhaEngine.ehCorHp(pd)) break
                                     alturaRun++
                                     dn++
                                 }
