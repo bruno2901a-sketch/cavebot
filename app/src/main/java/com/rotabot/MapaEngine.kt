@@ -40,6 +40,7 @@ object Cal {
     const val TEMPO_MINIMO_PARADO_CHEGADA_MS = 500L
     const val TEMPO_PARADO_RECLIQUE_MS = 1500L
     const val TEMPO_POR_CASA_MS = 700L
+    const val DURACAO_MINIMA_LUTA_MS = 2000L
     const val FATOR_TEMPO_MAX_PINO = 3L
     const val FOLGA_TEMPO_MAX_PINO_MS = 4000L
     const val PISO_ANIMACAO_MAX_PX = 28.0
