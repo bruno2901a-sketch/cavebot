@@ -1249,6 +1249,7 @@ if (!gestoItem.first) {
         LogRota.registrarPasso(context, mensagem, tela)
     }
 
+    @Synchronized
     fun passoSoAlarme(tela: Bitmap, context: Context, uriSom: String, volume: Int): String {
         ultimoUriSom = uriSom
         ultimoVolume = volume
