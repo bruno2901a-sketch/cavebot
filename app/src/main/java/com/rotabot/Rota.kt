@@ -15,6 +15,8 @@ object Cal {
     const val LIMIAR_VERDE = 0.78f
     const val MARGEM_VERDE = 0.03f
     const val CHEGOU_FRAC = 0.018f
+    const val TOLERANCIA_CHEGADA_CASAS = 1.5f
+    const val PERMITIR_PULO = false
     const val INTERVALO_CLIQUE = 700L
     const val TOTAL_ICONES = 20
     const val MINIMAPA_X0 = 0.848f
@@ -32,7 +34,21 @@ object Cal {
     const val MAX_FALHAS_PINO = 3
     const val IGNORAR_LUTA_MS = 4000L
     const val IGNORAR_SEM_ROTA_MS = 2500L
-    const val NAO_VISTO_LIMITE = 12
+    const val NAO_VISTO_LIMITE = 24
+    const val PIXELS_POR_CASA_PADRAO = 16.0f
+    const val TAMANHO_CASA_PX_PADRAO = 88.0f
+    const val LIMIAR_MINIMAPA_PARADO_PADRAO = 3.2f
+    const val REF_BARRA_TITULO_X_PADRAO = 0.620f
+    const val REF_BARRA_TITULO_Y_PADRAO = 0.145f
+    const val TEMPO_MINIMO_PARADO_CHEGADA_MS = 500L
+    const val TEMPO_PARADO_RECLIQUE_MS = 1500L
+    const val TEMPO_POR_CASA_MS = 700L
+    const val FATOR_TEMPO_MAX_PINO = 3L
+    const val FOLGA_TEMPO_MAX_PINO_MS = 4000L
+    const val PISO_ANIMACAO_MAX_PX = 28.0
+    const val JANELA_ABERTURA_LOOT_MS = 1500L
+    const val TEMPO_MAX_POR_CORPO_MS = 6000L
+    const val MAX_TENTATIVAS_ITEM_LOOT = 2
     val PONTOS_CORPO: List<Pair<Float, Float>> = listOf(
         Pair(0.4890f, 0.5011f),
         Pair(0.4880f, 0.6082f),
@@ -129,6 +145,67 @@ private data class ResultadoVerdeTemplate(
     val margem: Double
 )
 
+private data class EstadoComparacaoMinimapa(
+    val emMovimento: Boolean,
+    val diffMedia: Double
+)
+
+private class EstadoPino {
+    var quadrosChegada = 0
+    var quadrosPertoDaCruz = 0
+    var quadrosSumidoVerde = 0
+    var ultimaDist = -1f
+    var ultimaDistVerde = -1f
+    var menorDistVerde = -1f
+    var semProgresso = 0
+    var cliquesVerde = 0
+    var naoVisto = 0
+    var falhasPino = 0
+    var quadrosQuaseLimiar = 0
+    var ultimoCandidatoQuaseLimiar: Pair<Int, Int>? = null
+    var candidatoConsistente: Pair<Int, Int>? = null
+    var verdeVeioDeTemplate = false
+    var ultimoVerdeRel: Pair<Int, Int>? = null
+    var ultimoQtdVerde = 0
+    var ultimoRgbVerde: Triple<Int, Int, Int>? = null
+    var vistoVerde = false
+    var retomarVerdeAte = 0L
+    var resyncUsadoNestePino = false
+    var nivelRecuperacaoPino = 0
+    var ultimoPosPinoConhecidaRel: Pair<Int, Int>? = null
+    var ultimoPosPinoEraVerde = false
+    var voltouAoPinoAnteriorParaTentar = false
+
+    fun reiniciar(preservarFalhas: Boolean = false) {
+        val falhasAnteriores = falhasPino
+        val voltouAnterior = voltouAoPinoAnteriorParaTentar
+        quadrosChegada = 0
+        quadrosPertoDaCruz = 0
+        quadrosSumidoVerde = 0
+        ultimaDist = -1f
+        ultimaDistVerde = -1f
+        menorDistVerde = -1f
+        semProgresso = 0
+        cliquesVerde = 0
+        naoVisto = 0
+        falhasPino = if (preservarFalhas) falhasAnteriores else 0
+        quadrosQuaseLimiar = 0
+        ultimoCandidatoQuaseLimiar = null
+        candidatoConsistente = null
+        verdeVeioDeTemplate = false
+        ultimoVerdeRel = null
+        ultimoQtdVerde = 0
+        ultimoRgbVerde = null
+        vistoVerde = false
+        retomarVerdeAte = 0L
+        resyncUsadoNestePino = false
+        nivelRecuperacaoPino = 0
+        ultimoPosPinoConhecidaRel = null
+        ultimoPosPinoEraVerde = false
+        voltouAoPinoAnteriorParaTentar = if (preservarFalhas) voltouAnterior else false
+    }
+}
+
 private fun ehVerdePinoAtivo(p: Int): Boolean {
     val r = (p shr 16) and 0xFF
     val g = (p shr 8) and 0xFF
@@ -159,26 +236,81 @@ object Rota {
     @Volatile
     var autoloots: Int = 0
 
+    @Volatile
+    var chegadasConfirmadas: Int = 0
+
+    @Volatile
+    var pulosPino: Int = 0
+
+    @Volatile
+    var pixelsPorCasa: Float = Cal.PIXELS_POR_CASA_PADRAO
+
+    @Volatile
+    var tamanhoCasaPx: Float = Cal.TAMANHO_CASA_PX_PADRAO
+
+    @Volatile
+    var limiarMinimapaParado: Float = Cal.LIMIAR_MINIMAPA_PARADO_PADRAO
+
+    @Volatile
+    var refBarraTituloX: Float = Cal.REF_BARRA_TITULO_X_PADRAO
+
+    @Volatile
+    var refBarraTituloY: Float = Cal.REF_BARRA_TITULO_Y_PADRAO
+
+    @Volatile
+    var capturadorQuadroLoot: (() -> Bitmap?)? = null
+
     private var modelos: List<Modelo> = emptyList()
     private var fase = FaseNavegacao.ESCOLHER
     private var alvo = 0
     private var direcaoIda = true
     private var ultimoClique = 0L
     private var iniciouCaminhadaEm = 0L
+    private var tempoMaxPinoMs = 15000L
     private var pausadoAte = 0L
-    private var quadrosChegada = 0
-    private var quadrosPertoDaCruz = 0
-    private var quadrosSumidoVerde = 0
-    private var ultimaDist = -1f
-    private var ultimaDistVerde = -1f
-    private var menorDistVerde = -1f
-    private var semProgresso = 0
-    private var cliquesVerde = 0
-    private var naoVisto = 0
-    private var falhasPino = 0
-    private var quadrosQuaseLimiar = 0
-    private var ultimoCandidatoQuaseLimiar: Pair<Int, Int>? = null
-    private var candidatoConsistente: Pair<Int, Int>? = null
+    private var pausadoPorPinoPerdido = false
+    private var ultimoUriSom = ""
+    private var ultimoVolume = 80
+    private val estadoPino = EstadoPino()
+    private var quadrosChegada: Int
+        get() = estadoPino.quadrosChegada
+        set(v) { estadoPino.quadrosChegada = v }
+    private var quadrosPertoDaCruz: Int
+        get() = estadoPino.quadrosPertoDaCruz
+        set(v) { estadoPino.quadrosPertoDaCruz = v }
+    private var quadrosSumidoVerde: Int
+        get() = estadoPino.quadrosSumidoVerde
+        set(v) { estadoPino.quadrosSumidoVerde = v }
+    private var ultimaDist: Float
+        get() = estadoPino.ultimaDist
+        set(v) { estadoPino.ultimaDist = v }
+    private var ultimaDistVerde: Float
+        get() = estadoPino.ultimaDistVerde
+        set(v) { estadoPino.ultimaDistVerde = v }
+    private var menorDistVerde: Float
+        get() = estadoPino.menorDistVerde
+        set(v) { estadoPino.menorDistVerde = v }
+    private var semProgresso: Int
+        get() = estadoPino.semProgresso
+        set(v) { estadoPino.semProgresso = v }
+    private var cliquesVerde: Int
+        get() = estadoPino.cliquesVerde
+        set(v) { estadoPino.cliquesVerde = v }
+    private var naoVisto: Int
+        get() = estadoPino.naoVisto
+        set(v) { estadoPino.naoVisto = v }
+    private var falhasPino: Int
+        get() = estadoPino.falhasPino
+        set(v) { estadoPino.falhasPino = v }
+    private var quadrosQuaseLimiar: Int
+        get() = estadoPino.quadrosQuaseLimiar
+        set(v) { estadoPino.quadrosQuaseLimiar = v }
+    private var ultimoCandidatoQuaseLimiar: Pair<Int, Int>?
+        get() = estadoPino.ultimoCandidatoQuaseLimiar
+        set(v) { estadoPino.ultimoCandidatoQuaseLimiar = v }
+    private var candidatoConsistente: Pair<Int, Int>?
+        get() = estadoPino.candidatoConsistente
+        set(v) { estadoPino.candidatoConsistente = v }
     private var quadrosSemRota = 0
     private var ignorarSemRotaAte = 0L
     private var quadrosMonstro = 0
@@ -187,12 +319,24 @@ object Rota {
     private var tempoInicioLuta = 0L
     private var estavaEmLutaCaminhando = false
     private var verdeRelAntesDaLuta: Pair<Int, Int>? = null
-    private var retomarVerdeAte = 0L
-    private var verdeVeioDeTemplate = false
-    private var ultimoVerdeRel: Pair<Int, Int>? = null
-    private var ultimoQtdVerde = 0
-    private var ultimoRgbVerde: Triple<Int, Int, Int>? = null
-    private var vistoVerde = false
+    private var retomarVerdeAte: Long
+        get() = estadoPino.retomarVerdeAte
+        set(v) { estadoPino.retomarVerdeAte = v }
+    private var verdeVeioDeTemplate: Boolean
+        get() = estadoPino.verdeVeioDeTemplate
+        set(v) { estadoPino.verdeVeioDeTemplate = v }
+    private var ultimoVerdeRel: Pair<Int, Int>?
+        get() = estadoPino.ultimoVerdeRel
+        set(v) { estadoPino.ultimoVerdeRel = v }
+    private var ultimoQtdVerde: Int
+        get() = estadoPino.ultimoQtdVerde
+        set(v) { estadoPino.ultimoQtdVerde = v }
+    private var ultimoRgbVerde: Triple<Int, Int, Int>?
+        get() = estadoPino.ultimoRgbVerde
+        set(v) { estadoPino.ultimoRgbVerde = v }
+    private var vistoVerde: Boolean
+        get() = estadoPino.vistoVerde
+        set(v) { estadoPino.vistoVerde = v }
     private var indiceCliqueVariavel = 0
     private var fimLutaEm = 0L
     private var versaoRegistradaNoLog = false
@@ -205,8 +349,48 @@ object Rota {
     private var estadoLogLutaAlarme = 0
     private var ultimoLogLutaAlarmeEm = 0L
 
+    private var ultimoRecorteMinimapa: DoubleArray? = null
+    private var ultimoRecorteMinimapaW = 0
+    private var ultimoRecorteMinimapaH = 0
+    private var minimapaParadoDesde = 0L
+    private var ultimaDiffMinimapa = 0.0
+    private var resyncUsadoNestePino: Boolean
+        get() = estadoPino.resyncUsadoNestePino
+        set(v) { estadoPino.resyncUsadoNestePino = v }
+    private var nivelRecuperacaoPino: Int
+        get() = estadoPino.nivelRecuperacaoPino
+        set(v) { estadoPino.nivelRecuperacaoPino = v }
+    private var ultimoPosPinoConhecidaRel: Pair<Int, Int>?
+        get() = estadoPino.ultimoPosPinoConhecidaRel
+        set(v) { estadoPino.ultimoPosPinoConhecidaRel = v }
+    private var ultimoPosPinoEraVerde: Boolean
+        get() = estadoPino.ultimoPosPinoEraVerde
+        set(v) { estadoPino.ultimoPosPinoEraVerde = v }
+    private var quadrosSemRotaSeguidos = 0
+    private var pontoOpcionalMensagemSemRota: Pair<Float, Float>? = null
+
+    private var battleAncoraX: Int = -1
+    private var battleAncoraY: Int = -1
+    private var battleAncoraW: Int = 0
+    private var battleAncoraH: Int = 0
+    private var battleAncoraAssinatura: DoubleArray? = null
+    private var inicioPresencaLutaMs: Long = 0L
+    private var inicioAusenciaLutaMs: Long = 0L
+    private var lutaConfirmadaAtiva: Boolean = false
+    private var salvouQuadroInicioLuta = false
+    private var salvouQuadroInicioAlarmeLuta = false
+
+    private var recortesCasasLuta: Array<DoubleArray?> = arrayOfNulls(8)
+    private var variacaoMaxCasasLuta: DoubleArray = DoubleArray(8)
+    private var ultimoBarraTituloAbs: Pair<Int, Int>? = null
+    private var ultimoLogResumoEm = 0L
+
     @Volatile
     private var melhorScore = 0.0
+
+    fun configurarPontoOpcionalSemRota(ponto: Pair<Float, Float>?) {
+        pontoOpcionalMensagemSemRota = ponto
+    }
 
     fun carregar(ctx: Context, inicio: Int, fim: Int, larguraTela: Int) {
         val lado = (Cal.LADO_ICONE * larguraTela / 2460f)
@@ -215,8 +399,12 @@ object Rota {
         val lista = ArrayList<Modelo>()
 
         for (n in inicio..fim) {
-            val raw = ctx.assets.open("pins/p%02d.png".format(n))
-                .use { BitmapFactory.decodeStream(it) } ?: continue
+            val raw = try {
+                ctx.assets.open("pins/p%02d.png".format(n))
+                    .use { BitmapFactory.decodeStream(it) }
+            } catch (_: Exception) {
+                null
+            } ?: continue
 
             val bmp = if (raw.width == lado && raw.height == lado) {
                 raw
@@ -268,20 +456,10 @@ object Rota {
         direcaoIda = true
         ultimoClique = 0L
         iniciouCaminhadaEm = 0L
+        tempoMaxPinoMs = 15000L
         pausadoAte = 0L
-        quadrosChegada = 0
-        quadrosPertoDaCruz = 0
-        quadrosSumidoVerde = 0
-        ultimaDist = -1f
-        ultimaDistVerde = -1f
-        menorDistVerde = -1f
-        semProgresso = 0
-        cliquesVerde = 0
-        naoVisto = 0
-        falhasPino = 0
-        quadrosQuaseLimiar = 0
-        ultimoCandidatoQuaseLimiar = null
-        candidatoConsistente = null
+        pausadoPorPinoPerdido = false
+        estadoPino.reiniciar(preservarFalhas = false)
         quadrosSemRota = 0
         ignorarSemRotaAte = 0L
         quadrosMonstro = 0
@@ -290,12 +468,6 @@ object Rota {
         tempoInicioLuta = 0L
         estavaEmLutaCaminhando = false
         verdeRelAntesDaLuta = null
-        retomarVerdeAte = 0L
-        verdeVeioDeTemplate = false
-        ultimoVerdeRel = null
-        ultimoQtdVerde = 0
-        ultimoRgbVerde = null
-        vistoVerde = false
         indiceCliqueVariavel = 0
         fimLutaEm = 0L
         versaoRegistradaNoLog = false
@@ -310,8 +482,32 @@ object Rota {
         cancelarAutoloot = false
         lutas = 0
         autoloots = 0
+        chegadasConfirmadas = 0
+        pulosPino = 0
+        ultimoRecorteMinimapa = null
+        ultimoRecorteMinimapaW = 0
+        ultimoRecorteMinimapaH = 0
+        minimapaParadoDesde = 0L
+        ultimaDiffMinimapa = 0.0
+        quadrosSemRotaSeguidos = 0
+        inicioPresencaLutaMs = 0L
+        inicioAusenciaLutaMs = 0L
+        lutaConfirmadaAtiva = false
+        salvouQuadroInicioLuta = false
+        salvouQuadroInicioAlarmeLuta = false
+        recortesCasasLuta = arrayOfNulls(8)
+        variacaoMaxCasasLuta = DoubleArray(8)
+        ultimoBarraTituloAbs = null
+        ultimoLogResumoEm = 0L
         melhorScore = 0.0
         BotService.pararAlarme()
+    }
+
+    private fun calcularTempoMaxPinoMs(distPx: Float): Long {
+        val pxCasa = pixelsPorCasa.coerceAtLeast(1f)
+        val casasReais = if (distPx > 0f) (distPx / pxCasa) else 1f
+        val baseMs = (casasReais * Cal.TEMPO_POR_CASA_MS.toFloat()).toLong()
+        return (baseMs * Cal.FATOR_TEMPO_MAX_PINO) + Cal.FOLGA_TEMPO_MAX_PINO_MS
     }
 
     private fun iniciarCaminhada(
@@ -320,8 +516,11 @@ object Rota {
         agora: Long,
         veioDeTemplate: Boolean
     ) {
+        estadoPino.reiniciar(preservarFalhas = true)
         fase = FaseNavegacao.CAMINHANDO
         ultimoVerdeRel = relPos
+        ultimoPosPinoConhecidaRel = relPos
+        ultimoPosPinoEraVerde = veioDeTemplate
         ultimoQtdVerde = 0
         ultimoRgbVerde = null
         vistoVerde = false
@@ -330,15 +529,7 @@ object Rota {
         menorDistVerde = distAtual
         ultimaDist = distAtual
         iniciouCaminhadaEm = agora
-        quadrosChegada = 0
-        quadrosPertoDaCruz = 0
-        quadrosSumidoVerde = 0
-        quadrosSemRota = 0
-        semProgresso = 0
-        cliquesVerde = 0
-        quadrosQuaseLimiar = 0
-        ultimoCandidatoQuaseLimiar = null
-        candidatoConsistente = null
+        tempoMaxPinoMs = calcularTempoMaxPinoMs(distAtual)
     }
 
     private fun registrarLogAlvo(context: Context?, tela: Bitmap?) {
@@ -351,9 +542,110 @@ object Rota {
         }
     }
 
-    private fun proximoPino(agora: Long, context: Context? = null, tela: Bitmap? = null) {
+    private fun registrarResumoContadores(context: Context?, tela: Bitmap?) {
+        val ctx = context ?: return
+        val msg = "RESUMO_CONTADORES chegadas=$chegadasConfirmadas pulos=$pulosPino lutas=$lutas loots=$autoloots"
+        LogRota.registrarPasso(ctx, msg, tela)
+    }
+
+    fun retomarPausaPinoPerdido() {
+        pausadoPorPinoPerdido = false
+        pausadoAte = 0L
+        estadoPino.reiniciar(false)
+    }
+
+    private fun voltarPinoAnteriorRespeitandoDirecao() {
+        val tamanho = modelos.size
+        if (tamanho <= 1) {
+            alvo = 0
+            return
+        }
+        if (direcaoIda) {
+            if (alvo > 0) {
+                alvo--
+            } else {
+                direcaoIda = false
+                alvo = 1.coerceAtMost(tamanho - 1)
+            }
+        } else {
+            if (alvo < tamanho - 1) {
+                alvo++
+            } else {
+                direcaoIda = true
+                alvo = (tamanho - 2).coerceAtLeast(0)
+            }
+        }
+    }
+
+    private fun pausarPorPinoPerdido(pinoId: Int, context: Context?, tela: Bitmap?) {
+        pausadoPorPinoPerdido = true
+        pausadoAte = Long.MAX_VALUE
+        fase = FaseNavegacao.ESCOLHER
+        if (context != null) {
+            BotService.tocarAlarme(context, ultimoUriSom, ultimoVolume)
+            LogRota.registrarPasso(context, "PAUSADO_POR_PINO_PERDIDO pino=$pinoId", tela)
+        }
+    }
+
+    private fun tratarEsgotamentoPinoSemPulo(
+        agora: Long,
+        pinoId: Int,
+        context: Context?,
+        tela: Bitmap?
+    ): Boolean {
+        if (Cal.PERMITIR_PULO) {
+            proximoPino(agora, "PULOU_POR_FALHAS", context, tela)
+            return true
+        }
+        if (!estadoPino.voltouAoPinoAnteriorParaTentar) {
+            estadoPino.voltouAoPinoAnteriorParaTentar = true
+            voltarPinoAnteriorRespeitandoDirecao()
+            fase = FaseNavegacao.ESCOLHER
+            iniciouCaminhadaEm = 0L
+            pausadoAte = agora + 200L
+            estadoPino.reiniciar(preservarFalhas = true)
+            falhasPino = 0
+            registrarLogAlvo(context, tela)
+            return true
+        }
+        pausarPorPinoPerdido(pinoId, context, tela)
+        return false
+    }
+
+    private fun chegouNoPino(
+        dist: Float,
+        estadoMini: EstadoComparacaoMinimapa,
+        tempoParadoMs: Long,
+        vistoVerdeParam: Boolean,
+        verdeVeioDeTemplateParam: Boolean
+    ): Boolean {
+        val toleranciaCasaPx = Cal.TOLERANCIA_CHEGADA_CASAS * pixelsPorCasa
+        val minimapaParadoSuficiente = !estadoMini.emMovimento && tempoParadoMs >= Cal.TEMPO_MINIMO_PARADO_CHEGADA_MS
+        val dentroTolerancia = dist >= 0f && dist <= toleranciaCasaPx
+        if (dentroTolerancia && minimapaParadoSuficiente && (vistoVerdeParam || verdeVeioDeTemplateParam)) {
+            quadrosChegada++
+            return quadrosChegada >= 2
+        }
+        quadrosChegada = 0
+        return false
+    }
+
+    private fun proximoPino(
+        agora: Long,
+        motivoAvanco: String,
+        context: Context? = null,
+        tela: Bitmap? = null
+    ) {
         val tamanho = modelos.size
         if (tamanho <= 0) return
+
+        val pinoAntesId = if (alvo in modelos.indices) modelos[alvo].indice else alvo
+
+        if (motivoAvanco == "CHEGADA_CONFIRMADA") {
+            chegadasConfirmadas++
+        } else {
+            pulosPino++
+        }
 
         if (tamanho == 1) {
             alvo = 0
@@ -372,35 +664,33 @@ object Rota {
                 alvo = 1.coerceAtMost(tamanho - 1)
             }
         }
+
+        val pinoDepoisId = if (alvo in modelos.indices) modelos[alvo].indice else alvo
+        if (context != null) {
+            LogRota.registrarPasso(
+                context,
+                "PROXIMO_PINO motivo=$motivoAvanco de=$pinoAntesId para=$pinoDepoisId chegadas=$chegadasConfirmadas pulos=$pulosPino",
+                tela
+            )
+        }
+
         registrarLogAlvo(context, tela)
+        registrarResumoContadores(context, tela)
 
         fase = FaseNavegacao.ESCOLHER
         ultimoClique = 0L
         iniciouCaminhadaEm = 0L
+        tempoMaxPinoMs = 15000L
         pausadoAte = agora + 200L
-        quadrosChegada = 0
-        quadrosPertoDaCruz = 0
-        quadrosSumidoVerde = 0
-        ultimaDist = -1f
-        ultimaDistVerde = -1f
-        menorDistVerde = -1f
-        semProgresso = 0
-        cliquesVerde = 0
-        naoVisto = 0
-        falhasPino = 0
-        quadrosQuaseLimiar = 0
-        ultimoCandidatoQuaseLimiar = null
-        candidatoConsistente = null
+        pausadoPorPinoPerdido = false
+        val manterVoltou = motivoAvanco != "CHEGADA_CONFIRMADA" && estadoPino.voltouAoPinoAnteriorParaTentar
+        estadoPino.reiniciar(preservarFalhas = false)
+        if (manterVoltou) estadoPino.voltouAoPinoAnteriorParaTentar = true
         quadrosSemRota = 0
+        quadrosSemRotaSeguidos = 0
         ignorarSemRotaAte = 0L
         estavaEmLutaCaminhando = false
         verdeRelAntesDaLuta = null
-        retomarVerdeAte = 0L
-        verdeVeioDeTemplate = false
-        ultimoVerdeRel = null
-        ultimoQtdVerde = 0
-        ultimoRgbVerde = null
-        vistoVerde = false
         indiceCliqueVariavel = 0
     }
 
@@ -418,28 +708,25 @@ object Rota {
         tela: Bitmap? = null
     ): String {
         falhasPino++
+        if (context != null) {
+            LogRota.registrarPasso(
+                context,
+                "FALHA_PINO pino=$pinoId motivo=$motivo falhas=$falhasPino/${Cal.MAX_FALHAS_PINO}",
+                tela
+            )
+        }
         if (falhasPino >= Cal.MAX_FALHAS_PINO) {
             val logAvanco = formatarLog(
                 faseNome, pinoId, score, qtdVerde, rgbVerde, distPx, progressoAntesReset,
                 "$motivo (falhas=$falhasPino -> proximo pino)"
             )
-            proximoPino(agora, context, tela)
+            tratarEsgotamentoPinoSemPulo(agora, pinoId, context, tela)
             return logAvanco
         }
 
         fase = FaseNavegacao.ESCOLHER
-        retomarVerdeAte = 0L
-        verdeVeioDeTemplate = false
-        semProgresso = 0
-        cliquesVerde = 0
-        quadrosChegada = 0
-        quadrosSumidoVerde = 0
+        estadoPino.reiniciar(preservarFalhas = true)
         quadrosSemRota = 0
-        ultimaDist = -1f
-        ultimaDistVerde = -1f
-        menorDistVerde = -1f
-        ultimoVerdeRel = null
-        vistoVerde = false
         return formatarLog(
             faseNome, pinoId, score, qtdVerde, rgbVerde, distPx, progressoAntesReset,
             "$motivo (falhas=$falhasPino/${Cal.MAX_FALHAS_PINO})"
@@ -473,6 +760,19 @@ object Rota {
                 pixelsTextoClaro++
             }
         }
+
+        val pontoOp = pontoOpcionalMensagemSemRota
+        if (pontoOp != null) {
+            val pxOpX = (pontoOp.first * tela.width).toInt().coerceIn(0, tela.width - 1)
+            val pxOpY = (pontoOp.second * tela.height).toInt().coerceIn(0, tela.height - 1)
+            val corOp = tela.getPixel(pxOpX, pxOpY)
+            val rOp = (corOp shr 16) and 0xFF
+            val gOp = (corOp shr 8) and 0xFF
+            val bOp = corOp and 0xFF
+            val marcadorAtivo = rOp >= 195 && gOp >= 195 && bOp >= 200
+            if (!marcadorAtivo) return false
+        }
+
         return pixelsTextoClaro in 40..650
     }
 
@@ -536,15 +836,290 @@ object Rota {
         return true
     }
 
+    private fun obterCentroPersonagemJogo(larguraTela: Int, alturaTela: Int): Pair<Float, Float> {
+        if (Cal.PONTOS_CORPO.isEmpty()) {
+            return Pair(larguraTela * 0.525f, alturaTela * 0.500f)
+        }
+        var somaX = 0f
+        var somaY = 0f
+        for (p in Cal.PONTOS_CORPO) {
+            somaX += p.first * larguraTela
+            somaY += p.second * alturaTela
+        }
+        return Pair(somaX / Cal.PONTOS_CORPO.size, somaY / Cal.PONTOS_CORPO.size)
+    }
+
+    private fun extrairRecorteCasa(
+        tela: Bitmap,
+        centroX: Float,
+        centroY: Float,
+        dxCasa: Int,
+        dyCasa: Int,
+        ladoCasaPx: Int
+    ): DoubleArray {
+        val half = (ladoCasaPx / 2).coerceAtLeast(6)
+        val cx = (centroX + dxCasa * ladoCasaPx).toInt()
+        val cy = (centroY + dyCasa * ladoCasaPx).toInt()
+        val x0 = (cx - half).coerceIn(0, (tela.width - 1).coerceAtLeast(0))
+        val y0 = (cy - half).coerceIn(0, (tela.height - 1).coerceAtLeast(0))
+        val x1 = (cx + half).coerceIn((x0 + 1).coerceAtMost(tela.width), tela.width)
+        val y1 = (cy + half).coerceIn((y0 + 1).coerceAtMost(tela.height), tela.height)
+        val rw = (x1 - x0).coerceAtLeast(1)
+        val rh = (y1 - y0).coerceAtLeast(1)
+        val px = IntArray(rw * rh)
+        tela.getPixels(px, 0, rw, x0, y0, rw, rh)
+        return DoubleArray(px.size) { idx -> cinza(px[idx]) }
+    }
+
+    private fun calcularDiferencaMediaRecorte(a: DoubleArray, b: DoubleArray): Double {
+        val n = minOf(a.size, b.size)
+        if (n <= 0) return 0.0
+        var soma = 0.0
+        for (i in 0 until n) {
+            soma += abs(a[i] - b[i])
+        }
+        return soma / n.toDouble()
+    }
+
+    private fun atualizarMonitoramentoCasasDuranteLuta(tela: Bitmap) {
+        if (tela.width <= 0 || tela.height <= 0) return
+        val centro = obterCentroPersonagemJogo(tela.width, tela.height)
+        val ladoCasa = tamanhoCasaPx.toInt().coerceIn(16, 260)
+        val deltas = arrayOf(
+            Pair(-1, -1), Pair(0, -1), Pair(1, -1),
+            Pair(-1, 0),              Pair(1, 0),
+            Pair(-1, 1),  Pair(0, 1),  Pair(1, 1)
+        )
+        for (i in 0 until 8) {
+            val d = deltas[i]
+            val atual = extrairRecorteCasa(tela, centro.first, centro.second, d.first, d.second, ladoCasa)
+            val anterior = recortesCasasLuta[i]
+            if (anterior == null) {
+                recortesCasasLuta[i] = atual
+            } else {
+                val diff = calcularDiferencaMediaRecorte(anterior, atual)
+                val novaVar = max(variacaoMaxCasasLuta[i], diff)
+                variacaoMaxCasasLuta[i] = novaVar.coerceAtMost(Cal.PISO_ANIMACAO_MAX_PX)
+                recortesCasasLuta[i] = atual
+            }
+        }
+    }
+
+    private fun prepararCapturaCasasAntesLuta(tela: Bitmap) {
+        if (tela.width <= 0 || tela.height <= 0) return
+        val centro = obterCentroPersonagemJogo(tela.width, tela.height)
+        val ladoCasa = tamanhoCasaPx.toInt().coerceIn(16, 260)
+        val deltas = arrayOf(
+            Pair(-1, -1), Pair(0, -1), Pair(1, -1),
+            Pair(-1, 0),              Pair(1, 0),
+            Pair(-1, 1),  Pair(0, 1),  Pair(1, 1)
+        )
+        variacaoMaxCasasLuta = DoubleArray(8)
+        for (i in 0 until 8) {
+            val d = deltas[i]
+            recortesCasasLuta[i] = extrairRecorteCasa(tela, centro.first, centro.second, d.first, d.second, ladoCasa)
+        }
+    }
+
+    private fun janelaLootAbertaPorEscuro(quadro: Bitmap): Boolean {
+        val x0 = (quadro.width * 0.48f).toInt().coerceIn(0, quadro.width - 1)
+        val y0 = (quadro.height * 0.12f).toInt().coerceIn(0, quadro.height - 1)
+        val x1 = (quadro.width * 0.78f).toInt().coerceIn(x0 + 1, quadro.width)
+        val y1 = (quadro.height * 0.42f).toInt().coerceIn(y0 + 1, quadro.height)
+        val rw = x1 - x0
+        val rh = y1 - y0
+        if (rw <= 0 || rh <= 0) return false
+        val px = IntArray(rw * rh)
+        quadro.getPixels(px, 0, rw, x0, y0, rw, rh)
+        var escuros = 0
+        for (p in px) {
+            val r = (p shr 16) and 0xFF
+            val g = (p shr 8) and 0xFF
+            val b = p and 0xFF
+            if (r < 45 && g < 45 && b < 55) {
+                escuros++
+            }
+        }
+        val razao = escuros.toFloat() / px.size.toFloat()
+        return razao >= 0.42f
+    }
+
+    private fun acharBarraTituloLoot(quadro: Bitmap): Pair<Int, Int>? {
+        val refX = (refBarraTituloX * quadro.width).toInt().coerceIn(0, quadro.width - 1)
+        val refY = (refBarraTituloY * quadro.height).toInt().coerceIn(0, quadro.height - 1)
+        val base = ultimoBarraTituloAbs ?: Pair(refX, refY)
+        val raioX = (quadro.width * 0.08f).toInt().coerceAtLeast(24)
+        val raioY = (quadro.height * 0.06f).toInt().coerceAtLeast(18)
+
+        val minX = (base.first - raioX).coerceIn(1, quadro.width - 2)
+        val maxX = (base.first + raioX).coerceIn(minX + 1, quadro.width - 2)
+        val minY = (base.second - raioY).coerceIn(1, quadro.height - 2)
+        val maxY = (base.second + raioY).coerceIn(minY + 1, quadro.height - 2)
+
+        val rw = maxX - minX
+        val rh = maxY - minY
+        if (rw <= 8 || rh <= 4) return null
+        val px = IntArray(rw * rh)
+        quadro.getPixels(px, 0, rw, minX, minY, rw, rh)
+
+        var melhorPontuacao = 0
+        var melhorX = -1
+        var melhorY = -1
+
+        for (yy in 0 until rh) {
+            val row = yy * rw
+            var clarosNaLinha = 0
+            for (xx in 0 until rw) {
+                val p = px[row + xx]
+                val r = (p shr 16) and 0xFF
+                val g = (p shr 8) and 0xFF
+                val b = p and 0xFF
+                if (r > 150 && g > 140 && b > 120) {
+                    clarosNaLinha++
+                }
+            }
+            if (clarosNaLinha >= 12) {
+                val distBase = hypot(((minX + rw / 2) - base.first).toDouble(), ((minY + yy) - base.second).toDouble())
+                val score = clarosNaLinha - (distBase * 0.25).toInt()
+                if (score > melhorPontuacao) {
+                    melhorPontuacao = score
+                    melhorX = minX + rw / 2
+                    melhorY = minY + yy
+                }
+            }
+        }
+
+        return if (melhorPontuacao >= 12 && melhorX >= 0 && melhorY >= 0) {
+            ultimoBarraTituloAbs = Pair(melhorX, melhorY)
+            Pair(melhorX, melhorY)
+        } else {
+            null
+        }
+    }
+
+    private fun pontoLootTemItem(quadro: Bitmap, lx: Int, ly: Int): Boolean {
+        val raio = 8
+        val x0 = (lx - raio).coerceIn(0, quadro.width - 1)
+        val y0 = (ly - raio).coerceIn(0, quadro.height - 1)
+        val x1 = (lx + raio).coerceIn((x0 + 1).coerceAtMost(quadro.width), quadro.width)
+        val y1 = (ly + raio).coerceIn((y0 + 1).coerceAtMost(quadro.height), quadro.height)
+        val rw = x1 - x0
+        val rh = y1 - y0
+        if (rw <= 0 || rh <= 0) return false
+        val px = IntArray(rw * rh)
+        quadro.getPixels(px, 0, rw, x0, y0, rw, rh)
+        var naoFundo = 0
+        for (p in px) {
+            val r = (p shr 16) and 0xFF
+            val g = (p shr 8) and 0xFF
+            val b = p and 0xFF
+            val ehFundoEscuro = r <= 42 && g <= 46 && b <= 56
+            if (!ehFundoEscuro && (r + g + b) > 165) {
+                naoFundo++
+            }
+        }
+        return naoFundo >= 10
+    }
+
+    private fun capturarQuadroFresco(fallbackTela: Bitmap): Bitmap {
+        val captor = capturadorQuadroLoot
+        if (captor != null) {
+            val fresco = try {
+                captor.invoke()
+            } catch (_: Exception) {
+                null
+            }
+            if (fresco != null && !fresco.isRecycled) {
+                return fresco
+            }
+        }
+        return fallbackTela.copy(fallbackTela.config ?: Bitmap.Config.ARGB_8888, false)
+    }
+
+    private fun temMonstroQuadroFresco(fallbackTela: Bitmap): Boolean {
+        val q = capturarQuadroFresco(fallbackTela)
+        return try {
+            temMonstro(q)
+        } finally {
+            if (q !== fallbackTela && !q.isRecycled) q.recycle()
+        }
+    }
+
+    private fun obterCruzMinimapaSegura(tela: Bitmap): String {
+        val x0 = (tela.width * Cal.MINIMAPA_X0).toInt().coerceIn(0, tela.width - 1)
+        val y0 = (tela.height * Cal.MINIMAPA_Y0).toInt().coerceIn(0, tela.height - 1)
+        val x1 = (tela.width * Cal.MINIMAPA_X1).toInt().coerceIn(x0 + 1, tela.width)
+        val y1 = (tela.height * Cal.MINIMAPA_Y1).toInt().coerceIn(y0 + 1, tela.height)
+        val c = acharCruz(tela, x0, y0, x1, y1)
+        return if (c != null) "${c.first},${c.second}" else "N/A"
+    }
+
     private fun executarAutoloot(larguraTela: Int, alturaTela: Int, context: Context, tela: Bitmap) {
         val inicioMs = SystemClock.uptimeMillis()
         var cliquesCount = 0
-        LogRota.registrarPasso(context, "AUTOLOOT inicio", tela)
+        LogRota.registrarPasso(context, "AUTOLOOT inicio tamCasa=${tamanhoCasaPx.toInt()}px", tela)
 
         if (!esperarFatiado(1000L, inicioMs, context, tela, cliquesCount)) return
 
-        val totalCorpo = Cal.PONTOS_CORPO.size
-        for ((idx, ponto) in Cal.PONTOS_CORPO.withIndex()) {
+        val centro = obterCentroPersonagemJogo(larguraTela, alturaTela)
+        val ladoCasa = tamanhoCasaPx.toInt().coerceIn(16, 260)
+        val deltas = arrayOf(
+            Pair(-1, -1), Pair(0, -1), Pair(1, -1),
+            Pair(-1, 0),              Pair(1, 0),
+            Pair(-1, 1),  Pair(0, 1),  Pair(1, 1)
+        )
+
+        data class CandidataCasa(
+            val indiceCasa: Int,
+            val px: Float,
+            val py: Float,
+            val distCentro: Double,
+            val diff: Double,
+            val piso: Double
+        )
+
+        val candidatas = ArrayList<CandidataCasa>()
+        val detalhesAvaliacao = StringBuilder()
+
+        for (i in 0 until 8) {
+            val d = deltas[i]
+            val cxCasa = centro.first + d.first * ladoCasa
+            val cyCasa = centro.second + d.second * ladoCasa
+            val corteAntes = recortesCasasLuta[i]
+            val corteDepois = extrairRecorteCasa(tela, centro.first, centro.second, d.first, d.second, ladoCasa)
+            val diff = if (corteAntes != null) calcularDiferencaMediaRecorte(corteAntes, corteDepois) else 0.0
+            val piso = variacaoMaxCasasLuta[i].coerceIn(1.5, Cal.PISO_ANIMACAO_MAX_PX)
+            if (i > 0) detalhesAvaliacao.append(";")
+            detalhesAvaliacao.append("c${i + 1}(diff=${"%.2f".format(diff)}/piso=${"%.2f".format(piso)})")
+            if (corteAntes != null && diff > piso) {
+                val dist = hypot((cxCasa - centro.first).toDouble(), (cyCasa - centro.second).toDouble())
+                candidatas.add(CandidataCasa(i, cxCasa, cyCasa, dist, diff, piso))
+            }
+        }
+
+        LogRota.registrarPasso(
+            context,
+            "AUTOLOOT casas candidatas=${candidatas.size} [$detalhesAvaliacao]",
+            tela
+        )
+
+        if (candidatas.isEmpty()) {
+            LogRota.registrarPasso(context, "AUTOLOOT nenhuma casa mudou acima do piso", tela)
+            autoloots++
+            val durSeg = (SystemClock.uptimeMillis() - inicioMs) / 1000L
+            LogRota.registrarPasso(
+                context,
+                "AUTOLOOT fim ${durSeg}s cliques=$cliquesCount cancelado=nao",
+                tela
+            )
+            return
+        }
+
+        val ordenadas = candidatas.sortedBy { it.distCentro }
+        val refX = (refBarraTituloX * larguraTela).toInt()
+        val refY = (refBarraTituloY * alturaTela).toInt()
+
+        for ((idxCorpo, cand) in ordenadas.withIndex()) {
             if (cancelarAutoloot) {
                 val durSeg = (SystemClock.uptimeMillis() - inicioMs) / 1000L
                 LogRota.registrarPasso(
@@ -565,10 +1140,15 @@ object Rota {
                 return
             }
 
-            val px = ponto.first * larguraTela
-            val py = ponto.second * alturaTela
+            if (temMonstroQuadroFresco(tela)) {
+                LogRota.registrarPasso(context, "AUTOLOOT interrompido: monstro apareceu", tela)
+                return
+            }
 
-            ToqueService.clicar(px, py, 30L)
+            val inicioCorpoMs = SystemClock.uptimeMillis()
+            val cruzAntes = obterCruzMinimapaSegura(tela)
+
+            ToqueService.clicar(cand.px, cand.py, 30L)
             cliquesCount++
             if (!esperarFatiado(60L, inicioMs, context, tela, cliquesCount)) return
 
@@ -581,25 +1161,75 @@ object Rota {
                 )
                 return
             }
-            ToqueService.clicar(px, py, 30L)
+            ToqueService.clicar(cand.px, cand.py, 30L)
             cliquesCount++
             LogRota.registrarPasso(
                 context,
-                "AUTOLOOT corpo ${idx + 1}/$totalCorpo ${px.toInt()},${py.toInt()}",
+                "AUTOLOOT corpo ${idxCorpo + 1}/${ordenadas.size} casa=${cand.indiceCasa + 1} diff=${"%.2f".format(cand.diff)} ${cand.px.toInt()},${cand.py.toInt()}",
                 tela
             )
 
-            if (!esperarFatiado(intervaloLootMs, inicioMs, context, tela, cliquesCount)) return
-        }
+            var janelaAberta = false
+            val esperaJanelaFim = SystemClock.uptimeMillis() + Cal.JANELA_ABERTURA_LOOT_MS
+            while (SystemClock.uptimeMillis() < esperaJanelaFim) {
+                if (cancelarAutoloot) {
+                    val durSeg = (SystemClock.uptimeMillis() - inicioMs) / 1000L
+                    LogRota.registrarPasso(
+                        context,
+                        "AUTOLOOT fim ${durSeg}s cliques=$cliquesCount cancelado=sim",
+                        tela
+                    )
+                    return
+                }
+                if (temMonstroQuadroFresco(tela)) {
+                    LogRota.registrarPasso(context, "AUTOLOOT interrompido: monstro apareceu", tela)
+                    return
+                }
+                val q = capturarQuadroFresco(tela)
+                val aberta = try {
+                    janelaLootAbertaPorEscuro(q)
+                } finally {
+                    if (q !== tela && !q.isRecycled) q.recycle()
+                }
+                if (aberta) {
+                    janelaAberta = true
+                    break
+                }
+                if (!esperarFatiado(80L, inicioMs, context, tela, cliquesCount)) return
+            }
 
-        if (!esperarFatiado(250L, inicioMs, context, tela, cliquesCount)) return
+            if (!janelaAberta) {
+                val cruzDepois = obterCruzMinimapaSegura(tela)
+                LogRota.registrarPasso(
+                    context,
+                    "corpo ${idxCorpo + 1}: itens=0 pegos=0 janela=fechada cruzAntes=$cruzAntes cruzDepois=$cruzDepois",
+                    tela
+                )
+                continue
+            }
 
-        val totalLoot = Cal.PONTOS_LOOT.size
-        for ((pIdx, ponto) in Cal.PONTOS_LOOT.withIndex()) {
-            val lx = ponto.first * larguraTela
-            val ly = ponto.second * alturaTela
+            val quadroBarra = capturarQuadroFresco(tela)
+            val barraAchada = try {
+                acharBarraTituloLoot(quadroBarra)
+            } finally {
+                if (quadroBarra !== tela && !quadroBarra.isRecycled) quadroBarra.recycle()
+            }
 
-            for (rep in 1..4) {
+            val usarOffsetBarra = barraAchada != null
+            val dxBarra = if (barraAchada != null) (barraAchada.first - refX).toFloat() else 0f
+            val dyBarra = if (barraAchada != null) (barraAchada.second - refY).toFloat() else 0f
+            if (!usarOffsetBarra) {
+                LogRota.registrarPasso(
+                    context,
+                    "AUTOLOOT barra titulo nao achada - usando PONTOS_LOOT fixos sem gravar cache",
+                    tela
+                )
+            }
+
+            var itensDetectados = 0
+            var itensPegos = 0
+
+            for (ponto in Cal.PONTOS_LOOT) {
                 if (cancelarAutoloot) {
                     val durSeg = (SystemClock.uptimeMillis() - inicioMs) / 1000L
                     LogRota.registrarPasso(
@@ -611,26 +1241,60 @@ object Rota {
                 }
                 if (SystemClock.uptimeMillis() - inicioMs >= maxAutolootMs) {
                     LogRota.registrarPasso(context, "AUTOLOOT limite de tempo", tela)
-                    val durSeg = (SystemClock.uptimeMillis() - inicioMs) / 1000L
-                    LogRota.registrarPasso(
-                        context,
-                        "AUTOLOOT fim ${durSeg}s cliques=$cliquesCount cancelado=nao",
-                        tela
-                    )
                     return
                 }
-                ToqueService.clicar(lx, ly, 30L)
-                cliquesCount++
-                if (!esperarFatiado(intervaloLootMs, inicioMs, context, tela, cliquesCount)) return
+                if (SystemClock.uptimeMillis() - inicioCorpoMs >= Cal.TEMPO_MAX_POR_CORPO_MS) {
+                    break
+                }
+
+                if (temMonstroQuadroFresco(tela)) {
+                    LogRota.registrarPasso(context, "AUTOLOOT interrompido: monstro apareceu", tela)
+                    return
+                }
+
+                val lx = (ponto.first * larguraTela + dxBarra).coerceIn(0f, (larguraTela - 1).toFloat())
+                val ly = (ponto.second * alturaTela + dyBarra).coerceIn(0f, (alturaTela - 1).toFloat())
+
+                val qCheckItem = capturarQuadroFresco(tela)
+                val temItemInicial = try {
+                    pontoLootTemItem(qCheckItem, lx.toInt(), ly.toInt())
+                } finally {
+                    if (qCheckItem !== tela && !qCheckItem.isRecycled) qCheckItem.recycle()
+                }
+
+                if (!temItemInicial) continue
+                itensDetectados++
+
+                var pegouEste = false
+                for (tentativa in 1..Cal.MAX_TENTATIVAS_ITEM_LOOT) {
+                    if (SystemClock.uptimeMillis() - inicioCorpoMs >= Cal.TEMPO_MAX_POR_CORPO_MS) break
+                    ToqueService.clicar(lx, ly, 30L)
+                    cliquesCount++
+                    if (!esperarFatiado(intervaloLootMs, inicioMs, context, tela, cliquesCount)) return
+
+                    val qPosClique = capturarQuadroFresco(tela)
+                    val aindaTemItem = try {
+                        pontoLootTemItem(qPosClique, lx.toInt(), ly.toInt())
+                    } finally {
+                        if (qPosClique !== tela && !qPosClique.isRecycled) qPosClique.recycle()
+                    }
+                    if (!aindaTemItem) {
+                        pegouEste = true
+                        itensPegos++
+                        break
+                    }
+                }
+                if (!pegouEste) {
+                    // Tentou ate 2 vezes e seguiu adiante
+                }
             }
 
+            val cruzDepois = obterCruzMinimapaSegura(tela)
             LogRota.registrarPasso(
                 context,
-                "AUTOLOOT loot ponto ${pIdx + 1}/$totalLoot",
+                "corpo ${idxCorpo + 1}: itens=$itensDetectados pegos=$itensPegos cruzAntes=$cruzAntes cruzDepois=$cruzDepois",
                 tela
             )
-
-            if (!esperarFatiado(intervaloLootMs, inicioMs, context, tela, cliquesCount)) return
         }
 
         autoloots++
@@ -659,7 +1323,8 @@ object Rota {
         } else {
             "rgb(0,0,0)"
         }
-        val base = "fase=$faseNome | pino=$pinoId | acerto=$scoreStr | verde=$qtdVerde | $rgbStr | dist=$distStr | semProgresso=$progresso"
+        val diffStr = "%.2f".format(ultimaDiffMinimapa)
+        val base = "fase=$faseNome | pino=$pinoId | acerto=$scoreStr | verde=$qtdVerde | $rgbStr | dist=$distStr | semProgresso=$progresso | diffMini=$diffStr"
         return if (extra != null && extra.isNotEmpty()) "$base | $extra" else base
     }
 
@@ -678,6 +1343,8 @@ object Rota {
     }
 
     fun passoSoAlarme(tela: Bitmap, context: Context, uriSom: String, volume: Int): String {
+        ultimoUriSom = uriSom
+        ultimoVolume = volume
         if (tela.height > tela.width) {
             return "Aguardando o jogo em paisagem"
         }
@@ -728,15 +1395,467 @@ object Rota {
         volume: Int,
         tocar: (Float, Float) -> Unit
     ): String {
+        ultimoUriSom = uriSom
+        ultimoVolume = volume
         if (!versaoRegistradaNoLog) {
             versaoRegistradaNoLog = true
-            val linhaVersao = "VERSAO Rota 1.5.1 | LIMIAR=${"%.2f".format(Cal.LIMIAR)} | LIMIAR_VERDE=${"%.2f".format(Cal.LIMIAR_VERDE)} | MARGEM_VERDE=${"%.2f".format(Cal.MARGEM_VERDE)} | INTERVALO_CLIQUE=${intervaloCliqueMs} | tela=${tela.width}x${tela.height}"
+            val linhaVersao = "VERSAO Rota 1.7.0 | LIMIAR=${"%.2f".format(Cal.LIMIAR)} | LIMIAR_VERDE=${"%.2f".format(Cal.LIMIAR_VERDE)} | MARGEM_VERDE=${"%.2f".format(Cal.MARGEM_VERDE)} | INTERVALO_CLIQUE=${intervaloCliqueMs} | tela=${tela.width}x${tela.height}"
             LogRota.registrarPasso(context, linhaVersao, tela)
         }
         val texto = passoInterno(tela, context, usaLoot, usaAlerta, uriSom, volume, tocar)
         LogRota.registrarPasso(context, texto, tela)
         return texto
     }
+
+    private fun temMonstroLegado(tela: Bitmap): Boolean {
+        val x0 = (tela.width * Cal.BATALHA_X0)
+            .toInt().coerceIn(0, tela.width - 1)
+        val y0 = (tela.height * Cal.BATALHA_Y0)
+            .toInt().coerceIn(0, tela.height - 1)
+        val x1 = (tela.width * Cal.BATALHA_X1)
+            .toInt().coerceIn(x0 + 1, tela.width)
+        val y1 = (tela.height * Cal.BATALHA_Y1)
+            .toInt().coerceIn(y0 + 1, tela.height)
+
+        val rw = x1 - x0
+        val rh = y1 - y0
+
+        if (rw <= 0 || rh <= 0) return false
+
+        val px = IntArray(rw * rh)
+        tela.getPixels(px, 0, rw, x0, y0, rw, rh)
+
+        var pixelsDestaque = 0
+        var pixelsBarraVida = 0
+
+        for (p in px) {
+            val r = (p shr 16) and 0xFF
+            val g = (p shr 8) and 0xFF
+            val b = p and 0xFF
+
+            val ehFundoEscuro =
+                r <= 32 && g <= 42 && b >= 18 && b <= 75
+
+            if (!ehFundoEscuro && (r > 95 || g > 105 || b > 125)) {
+                pixelsDestaque++
+            }
+            val ehVerdeHp = g >= 155 && r <= 85 && b <= 90
+            val ehAmareloOuLaranjaHp = r >= 165 && g in 70..225 && b <= 85
+            val ehVermelhoHp = r >= 155 && g <= 75 && b <= 75
+            if (ehVerdeHp || ehAmareloOuLaranjaHp || ehVermelhoHp) {
+                pixelsBarraVida++
+            }
+        }
+
+        return pixelsBarraVida >= 8 && pixelsDestaque >= 220
+    }
+
+    private fun localizarRegiaoBattle(tela: Bitmap): Pair<IntArray, Int> {
+        val defX0 = (tela.width * Cal.BATALHA_X0).toInt().coerceIn(0, tela.width - 1)
+        val defY0 = (tela.height * Cal.BATALHA_Y0).toInt().coerceIn(0, tela.height - 1)
+        val defX1 = (tela.width * Cal.BATALHA_X1).toInt().coerceIn(defX0 + 1, tela.width)
+        val defY1 = (tela.height * Cal.BATALHA_Y1).toInt().coerceIn(defY0 + 1, tela.height)
+
+        val ancX = battleAncoraX
+        val ancY = battleAncoraY
+        val ancW = battleAncoraW
+        val ancH = battleAncoraH
+        val ancSig = battleAncoraAssinatura
+        if (ancX >= 0 && ancY >= 0 && ancW > 0 && ancH > 0 && ancSig != null &&
+            ancX + ancW <= tela.width && ancY + ancH <= tela.height
+        ) {
+            val pxAnc = IntArray(ancW * ancH)
+            tela.getPixels(pxAnc, 0, ancW, ancX, ancY, ancW, ancH)
+            var diff = 0.0
+            for (i in 0 until minOf(pxAnc.size, ancSig.size)) {
+                diff += abs(cinza(pxAnc[i]) - ancSig[i])
+            }
+            diff /= ancSig.size.toDouble().coerceAtLeast(1.0)
+            if (diff <= 14.0) {
+                val bx0 = ancX.coerceIn(0, tela.width - 2)
+                val by0 = (ancY + ancH).coerceIn(0, tela.height - 2)
+                val bx1 = (bx0 + (defX1 - defX0).coerceAtLeast(40)).coerceIn(bx0 + 1, tela.width)
+                val by1 = (by0 + (defY1 - defY0).coerceAtLeast(60)).coerceIn(by0 + 1, tela.height)
+                return Pair(intArrayOf(bx0, by0, bx1, by1), 1)
+            } else {
+                battleAncoraX = -1
+                battleAncoraY = -1
+                battleAncoraAssinatura = null
+            }
+        }
+
+        val buscaX0 = 0
+        val buscaX1 = (tela.width * 0.35f).toInt().coerceIn(20, tela.width)
+        val buscaY0 = (tela.height * 0.08f).toInt().coerceIn(0, tela.height - 1)
+        val buscaY1 = (tela.height * 0.45f).toInt().coerceIn(buscaY0 + 10, tela.height)
+        val bw = buscaX1 - buscaX0
+        val bh = buscaY1 - buscaY0
+        if (bw > 16 && bh > 12) {
+            val pxBusca = IntArray(bw * bh)
+            tela.getPixels(pxBusca, 0, bw, buscaX0, buscaY0, bw, bh)
+            val faixaH = 16.coerceAtMost(bh)
+            val faixaW = 90.coerceAtMost(bw)
+            var melhorLinhaClaros = 0
+            var melhorYRel = -1
+            var melhorXRel = 0
+            var yy = 0
+            while (yy <= bh - faixaH) {
+                var xx = 0
+                while (xx <= bw - faixaW) {
+                    var claros = 0
+                    for (dy in 0 until faixaH) {
+                        val row = (yy + dy) * bw + xx
+                        for (dx in 0 until faixaW) {
+                            val p = pxBusca[row + dx]
+                            val r = (p shr 16) and 0xFF
+                            val g = (p shr 8) and 0xFF
+                            val b = p and 0xFF
+                            if (r > 155 && g > 145 && b > 125) claros++
+                        }
+                    }
+                    if (claros > melhorLinhaClaros) {
+                        melhorLinhaClaros = claros
+                        melhorXRel = xx
+                        melhorYRel = yy
+                    }
+                    xx += 8
+                }
+                yy += 4
+            }
+            if (melhorLinhaClaros >= 24 && melhorYRel >= 0) {
+                val ax = buscaX0 + melhorXRel
+                val ay = buscaY0 + melhorYRel
+                val aw = faixaW
+                val ah = faixaH
+                val pxSig = IntArray(aw * ah)
+                tela.getPixels(pxSig, 0, aw, ax, ay, aw, ah)
+                battleAncoraX = ax
+                battleAncoraY = ay
+                battleAncoraW = aw
+                battleAncoraH = ah
+                battleAncoraAssinatura = DoubleArray(pxSig.size) { cinza(pxSig[it]) }
+
+                val bx0 = ax.coerceIn(0, tela.width - 2)
+                val by0 = (ay + ah).coerceIn(0, tela.height - 2)
+                val bx1 = (bx0 + (defX1 - defX0).coerceAtLeast(40)).coerceIn(bx0 + 1, tela.width)
+                val by1 = (by0 + (defY1 - defY0).coerceAtLeast(60)).coerceIn(by0 + 1, tela.height)
+                return Pair(intArrayOf(bx0, by0, bx1, by1), 2)
+            }
+        }
+
+        return Pair(intArrayOf(defX0, defY0, defX1, defY1), 0)
+    }
+
+    private fun contarLinhasOcupadasBattle(tela: Bitmap): Int {
+        val (rect, _) = localizarRegiaoBattle(tela)
+        val x0 = rect[0]
+        val y0 = rect[1]
+        val x1 = rect[2]
+        val y1 = rect[3]
+        val rw = x1 - x0
+        val rh = y1 - y0
+        if (rw <= 8 || rh <= 6) return 0
+
+        val px = IntArray(rw * rh)
+        tela.getPixels(px, 0, rw, x0, y0, rw, rh)
+
+        val escala = (tela.width / 2460f).coerceIn(0.4f, 1.5f)
+        val alturaLinha = (20f * escala).toInt().coerceIn(8, 36)
+        val spriteLargura = (22f * escala).toInt().coerceIn(8, 36)
+
+        var linhasOcupadas = 0
+        var yStart = 0
+        while (yStart + 4 <= rh) {
+            val yEnd = (yStart + alturaLinha).coerceAtMost(rh)
+            val hLinha = yEnd - yStart
+
+            var temSprite = false
+            for (dy in 0 until hLinha) {
+                val row = (yStart + dy) * rw
+                for (dx in 0 until spriteLargura.coerceAtMost(rw)) {
+                    val p = px[row + dx]
+                    val r = (p shr 16) and 0xFF
+                    val g = (p shr 8) and 0xFF
+                    val b = p and 0xFF
+                    val fundo = r <= 35 && g <= 45 && b in 18..80
+                    if (!fundo && (r > 95 || g > 105 || b > 125)) {
+                        temSprite = true
+                        break
+                    }
+                }
+                if (temSprite) break
+            }
+
+            var temBarraVidaFina = false
+            if (temSprite) {
+                val barraXStart = spriteLargura.coerceAtMost(rw - 1)
+                val minComprimentoBarra = (14f * escala).toInt().coerceAtLeast(6)
+                for (dy in 0 until hLinha) {
+                    var runLen = 0
+                    for (dx in barraXStart until rw) {
+                        val p = px[(yStart + dy) * rw + dx]
+                        val r = (p shr 16) and 0xFF
+                        val g = (p shr 8) and 0xFF
+                        val b = p and 0xFF
+                        val ehCorHp = (g >= 155 && r <= 85 && b <= 90) ||
+                            (r >= 165 && g in 70..225 && b <= 85) ||
+                            (r >= 155 && g <= 75 && b <= 75)
+                        if (ehCorHp) {
+                            runLen++
+                        } else {
+                            if (runLen >= minComprimentoBarra) {
+                                var alturaRun = 1
+                                val checkX = dx - 1
+                                var up = dy - 1
+                                while (up >= 0) {
+                                    val pu = px[(yStart + up) * rw + checkX]
+                                    val ru = (pu shr 16) and 0xFF
+                                    val gu = (pu shr 8) and 0xFF
+                                    val bu = pu and 0xFF
+                                    val okU = (gu >= 155 && ru <= 85 && bu <= 90) ||
+                                        (ru >= 165 && gu in 70..225 && bu <= 85) ||
+                                        (ru >= 155 && gu <= 75 && bu <= 75)
+                                    if (!okU) break
+                                    alturaRun++
+                                    up--
+                                }
+                                var dn = dy + 1
+                                while (dn < hLinha) {
+                                    val pd = px[(yStart + dn) * rw + checkX]
+                                    val rd = (pd shr 16) and 0xFF
+                                    val gd = (pd shr 8) and 0xFF
+                                    val bd = pd and 0xFF
+                                    val okD = (gd >= 155 && rd <= 85 && bd <= 90) ||
+                                        (rd >= 165 && gd in 70..225 && bd <= 85) ||
+                                        (rd >= 155 && gd <= 75 && bd <= 75)
+                                    if (!okD) break
+                                    alturaRun++
+                                    dn++
+                                }
+                                if (alturaRun in 2..5) {
+                                    temBarraVidaFina = true
+                                    break
+                                }
+                            }
+                            runLen = 0
+                        }
+                    }
+                    if (!temBarraVidaFina && runLen >= minComprimentoBarra) {
+                        temBarraVidaFina = true
+                    }
+                    if (temBarraVidaFina) break
+                }
+            }
+
+            if (temSprite && temBarraVidaFina) {
+                linhasOcupadas++
+            }
+
+            yStart += alturaLinha
+        }
+
+        return linhasOcupadas
+    }
+
+    private fun avaliarLutaComConfirmacao(tela: Bitmap, context: Context, agora: Long): Boolean {
+        val linhasNovo = contarLinhasOcupadasBattle(tela)
+        val temLegado = temMonstroLegado(tela)
+        LogRota.registrarPasso(
+            context,
+            "BATALHA_DETECTOR novoLinhas=$linhasNovo legado=$temLegado",
+            tela
+        )
+
+        val temAlgoNovo = linhasNovo > 0
+        if (temAlgoNovo) {
+            inicioAusenciaLutaMs = 0L
+            if (inicioPresencaLutaMs == 0L) {
+                inicioPresencaLutaMs = agora
+            }
+            if (!lutaConfirmadaAtiva && (agora - inicioPresencaLutaMs) >= 300L) {
+                lutaConfirmadaAtiva = true
+                prepararCapturaCasasAntesLuta(tela)
+                LogRota.registrarPasso(context, "BATALHA_INICIO linhasOcupadas=$linhasNovo", tela)
+                if (!salvouQuadroInicioLuta) {
+                    salvouQuadroInicioLuta = true
+                    LogRota.salvarQuadroDiagnostico(context, "batalha_inicio", tela)
+                }
+            }
+        } else {
+            inicioPresencaLutaMs = 0L
+            if (lutaConfirmadaAtiva) {
+                if (inicioAusenciaLutaMs == 0L) {
+                    inicioAusenciaLutaMs = agora
+                }
+                if ((agora - inicioAusenciaLutaMs) >= 600L) {
+                    lutaConfirmadaAtiva = false
+                    inicioAusenciaLutaMs = 0L
+                    salvouQuadroInicioLuta = false
+                    salvouQuadroInicioAlarmeLuta = false
+                }
+            }
+        }
+
+        if (lutaConfirmadaAtiva) {
+            atualizarMonitoramentoCasasDuranteLuta(tela)
+        }
+
+        return lutaConfirmadaAtiva
+    }
+
+    private fun compararMinimapaComAnterior(
+        tela: Bitmap,
+        x0: Int,
+        y0: Int,
+        x1: Int,
+        y1: Int,
+        cruzAbsX: Float,
+        cruzAbsY: Float
+    ): EstadoComparacaoMinimapa {
+        val rw = x1 - x0
+        val rh = y1 - y0
+        if (rw <= 0 || rh <= 0) {
+            return EstadoComparacaoMinimapa(false, 0.0)
+        }
+        val px = IntArray(rw * rh)
+        tela.getPixels(px, 0, rw, x0, y0, rw, rh)
+
+        val cruzRelX = (cruzAbsX - x0).toInt()
+        val cruzRelY = (cruzAbsY - y0).toInt()
+        val raioIgnorarCruz = max(8, (rw * 0.06f).toInt())
+
+        val atual = DoubleArray(rw * rh)
+        for (yy in 0 until rh) {
+            val row = yy * rw
+            for (xx in 0 until rw) {
+                val ignorar = abs(xx - cruzRelX) <= raioIgnorarCruz && abs(yy - cruzRelY) <= raioIgnorarCruz
+                atual[row + xx] = if (ignorar) 0.0 else cinza(px[row + xx])
+            }
+        }
+
+        val anterior = ultimoRecorteMinimapa
+        if (anterior == null || anterior.size != atual.size || ultimoRecorteMinimapaW != rw || ultimoRecorteMinimapaH != rh) {
+            ultimoRecorteMinimapa = atual
+            ultimoRecorteMinimapaW = rw
+            ultimoRecorteMinimapaH = rh
+            return EstadoComparacaoMinimapa(false, 0.0)
+        }
+
+        var somaDiff = 0.0
+        var cont = 0
+        for (yy in 0 until rh) {
+            val row = yy * rw
+            for (xx in 0 until rw) {
+                val ignorar = abs(xx - cruzRelX) <= raioIgnorarCruz && abs(yy - cruzRelY) <= raioIgnorarCruz
+                if (ignorar) continue
+                somaDiff += abs(atual[row + xx] - anterior[row + xx])
+                cont++
+            }
+        }
+
+        ultimoRecorteMinimapa = atual
+        ultimoRecorteMinimapaW = rw
+        ultimoRecorteMinimapaH = rh
+
+        val media = if (cont > 0) somaDiff / cont.toDouble() else 0.0
+        val emMovimento = media > limiarMinimapaParado.toDouble()
+        return EstadoComparacaoMinimapa(emMovimento, media)
+    }
+
+    private fun executarEscadaRecuperacaoPino(
+        tela: Bitmap,
+        x0: Int,
+        y0: Int,
+        x1: Int,
+        y1: Int,
+        cx: Float,
+        cy: Float,
+        toleranciaChegada: Float,
+        agora: Long,
+        context: Context,
+        tocar: (Float, Float) -> Unit,
+        modelo: Modelo
+    ): String? {
+        val minToqueX = 28f.coerceAtMost((tela.width - 1).toFloat())
+        val maxToqueX = (tela.width * 0.985f - 20f).coerceAtLeast(minToqueX)
+        val minToqueY = 28f.coerceAtMost((tela.height - 1).toFloat())
+        val maxToqueY = (tela.height - 28f).coerceAtLeast(minToqueY)
+        val pinoId = modelo.indice
+
+        if (nivelRecuperacaoPino == 0) {
+            val posReal = ultimoPosPinoConhecidaRel ?: acharPorTemplate(tela, x0, y0, x1, y1, modelo, cx, cy)?.let {
+                Pair((it.first - x0).coerceIn(0, rwSafe(x0, x1) - 1), (it.second - y0).coerceIn(0, rhSafe(y0, y1) - 1))
+            }
+            if (posReal != null) {
+                val px = (x0 + posReal.first).toFloat().coerceIn(minToqueX, maxToqueX)
+                val py = (y0 + posReal.second).toFloat().coerceIn(minToqueY, maxToqueY)
+                val toque = dispararToqueSeguro(tela.width, tela.height, px, py, tocar)
+                ultimoClique = agora
+                nivelRecuperacaoPino = 1
+                val logToque = anexarTempoPosLuta("CLIQUE ${toque.first.toInt()},${toque.second.toInt()}", agora)
+                return formatarLog(
+                    fase.name, pinoId, melhorScore, ultimoQtdVerde, ultimoRgbVerde,
+                    ultimaDistVerde, semProgresso, "RECUPERACAO_1_RECLIQUE_REAL | $logToque"
+                )
+            }
+            nivelRecuperacaoPino = 1
+        }
+
+        if (nivelRecuperacaoPino == 1) {
+            val posBase = ultimoPosPinoConhecidaRel
+            if (posBase != null) {
+                val offsets = arrayOf(Pair(8f, 0f), Pair(-8f, 0f), Pair(0f, 8f), Pair(0f, -8f), Pair(10f, 6f), Pair(-10f, -6f), Pair(6f, -10f), Pair(-6f, 10f))
+                val off = offsets[indiceCliqueVariavel++ % offsets.size]
+                val px = (x0 + posBase.first + off.first).coerceIn((x0 + 15f).coerceAtMost(maxToqueX), (x1 - 15f).coerceAtMost(maxToqueX)).coerceIn(minToqueX, maxToqueX)
+                val py = (y0 + posBase.second + off.second).coerceIn(y0 + 15f, y1 - 15f).coerceIn(minToqueY, maxToqueY)
+                val toque = dispararToqueSeguro(tela.width, tela.height, px, py, tocar)
+                ultimoClique = agora
+                nivelRecuperacaoPino = 2
+                val logToque = anexarTempoPosLuta("CLIQUE ${toque.first.toInt()},${toque.second.toInt()}", agora)
+                return formatarLog(
+                    fase.name, pinoId, melhorScore, ultimoQtdVerde, ultimoRgbVerde,
+                    ultimaDistVerde, semProgresso, "RECUPERACAO_2_DESLOCAMENTO_LATERAL | $logToque"
+                )
+            }
+            nivelRecuperacaoPino = 2
+        }
+
+        if (nivelRecuperacaoPino == 2) {
+            LogRota.registrarPasso(
+                context,
+                "AVISO_ZOOM_CURTO: app nao possui gesto de zoom curto implementado; avancando para resync/alarme",
+                tela
+            )
+            nivelRecuperacaoPino = 3
+        }
+
+        if (!resyncUsadoNestePino) {
+            resyncUsadoNestePino = true
+            val resyncLog = tentarResyncPino(tela, x0, y0, x1, y1, cx, cy, toleranciaChegada, agora, context)
+            if (resyncLog != null) {
+                return formatarLog(
+                    fase.name,
+                    if (alvo in modelos.indices) modelos[alvo].indice else pinoId,
+                    melhorScore,
+                    0,
+                    ultimoRgbVerde,
+                    -1f,
+                    semProgresso,
+                    "RECUPERACAO_RESYNC | $resyncLog"
+                )
+            }
+        }
+
+        val msgAlarmePino = formatarLog(
+            fase.name, pinoId, melhorScore, ultimoQtdVerde, ultimoRgbVerde,
+            ultimaDistVerde, semProgresso, "RECUPERACAO_ALARME_E_PULO"
+        )
+        tratarEsgotamentoPinoSemPulo(agora, pinoId, context, tela)
+        return msgAlarmePino
+    }
+
+    private fun rwSafe(x0: Int, x1: Int): Int = (x1 - x0).coerceAtLeast(1)
+    private fun rhSafe(y0: Int, y1: Int): Int = (y1 - y0).coerceAtLeast(1)
 
     private fun passoInterno(
         tela: Bitmap,
@@ -767,18 +1886,28 @@ object Rota {
         val cruz = acharCruz(tela, x0, y0, x1, y1)
             ?: return "SEM CRUZ NO MINIMAPA (pausado)"
 
-        val agoraLuta = SystemClock.uptimeMillis()
-        val monstroDetectado = if (agoraLuta >= ignorarLutaAte && temMonstro(tela)) {
-            quadrosMonstro++
-            quadrosMonstro >= 2
+        val cx = cruz.first.toFloat()
+        val cy = cruz.second.toFloat()
+        val agora = SystemClock.uptimeMillis()
+
+        val estadoMini = compararMinimapaComAnterior(tela, x0, y0, x1, y1, cx, cy)
+        ultimaDiffMinimapa = estadoMini.diffMedia
+        if (estadoMini.emMovimento) {
+            minimapaParadoDesde = 0L
+        } else if (minimapaParadoDesde == 0L) {
+            minimapaParadoDesde = agora
+        }
+        val tempoParadoMs = if (minimapaParadoDesde > 0L) (agora - minimapaParadoDesde) else 0L
+
+        val agoraLuta = agora
+        val monstroDetectado = if (agoraLuta >= ignorarLutaAte) {
+            avaliarLutaComConfirmacao(tela, context, agoraLuta)
         } else {
             quadrosMonstro = 0
             false
         }
 
         if (monstroDetectado) {
-            val agora = agoraLuta
-
             if (!estavaEmLuta) {
                 estavaEmLuta = true
                 tempoInicioLuta = agora
@@ -790,6 +1919,12 @@ object Rota {
             val duracaoLuta = agora - tempoInicioLuta
             val segsLuta = duracaoLuta / 1000L
             if (usaAlerta && duracaoLuta >= limiteAlarmeMs) {
+                if (!salvouQuadroInicioAlarmeLuta) {
+                    salvouQuadroInicioAlarmeLuta = true
+                    val linhasAtuais = contarLinhasOcupadasBattle(tela)
+                    LogRota.registrarPasso(context, "ALARME_INICIO linhasOcupadas=$linhasAtuais duracao=${segsLuta}s", tela)
+                    LogRota.salvarQuadroDiagnostico(context, "alarme_luta", tela)
+                }
                 BotService.tocarAlarme(context, uriSom, volume)
                 val msgAlarme = "ALARME: batalha há ${segsLuta}s"
                 if (estadoLogLutaAlarme != 1 && agora - ultimoLogLutaAlarmeEm >= 1000L) {
@@ -803,13 +1938,13 @@ object Rota {
             return "LUTA ${segsLuta}s (pausado)"
         }
 
-        if (agoraLuta >= ignorarLutaAte) {
+        if (agoraLuta >= ignorarLutaAte && !pausadoPorPinoPerdido) {
             BotService.pararAlarme()
         }
 
         if (estavaEmLuta) {
-            val agora = SystemClock.uptimeMillis()
-            val duracaoTotalSeg = if (tempoInicioLuta > 0L) (agora - tempoInicioLuta) / 1000L else 0L
+            val duracaoTotalLutaMs = if (tempoInicioLuta > 0L) (agora - tempoInicioLuta).coerceAtLeast(0L) else 0L
+            val duracaoTotalSeg = duracaoTotalLutaMs / 1000L
             val veioDeCaminhando = estavaEmLutaCaminhando
             val refVerde = verdeRelAntesDaLuta
 
@@ -827,12 +1962,18 @@ object Rota {
             estavaEmLutaCaminhando = false
             verdeRelAntesDaLuta = null
             quadrosMonstro = 0
+            salvouQuadroInicioAlarmeLuta = false
 
+            val antesLootMs = SystemClock.uptimeMillis()
             if (usaLoot) {
                 executarAutoloot(tela.width, tela.height, context, tela)
             }
-
-            fimLutaEm = SystemClock.uptimeMillis()
+            val fimProcessamentoLutaLootMs = SystemClock.uptimeMillis()
+            fimLutaEm = fimProcessamentoLutaLootMs
+            val duracaoPausaTotalMs = duracaoTotalLutaMs + (fimProcessamentoLutaLootMs - antesLootMs).coerceAtLeast(0L)
+            if (iniciouCaminhadaEm > 0L && duracaoPausaTotalMs > 0L) {
+                iniciouCaminhadaEm += duracaoPausaTotalMs
+            }
 
             ultimoClique = 0L
             pausadoAte = agora + 200L
@@ -859,6 +2000,7 @@ object Rota {
                 ultimoVerdeRel = refVerde
                 retomarVerdeAte = agora + 2000L
                 iniciouCaminhadaEm = agora
+                tempoMaxPinoMs = calcularTempoMaxPinoMs(if (ultimaDistVerde > 0f) ultimaDistVerde else pixelsPorCasa * 4f)
                 return if (usaLoot) {
                     "AUTOLOOT concluído - retomando verde"
                 } else {
@@ -888,11 +2030,19 @@ object Rota {
 
         val modelo = modelos[alvo]
         val indice = modelo.indice
-        val cx = cruz.first.toFloat()
-        val cy = cruz.second.toFloat()
-        val toleranciaChegada = tela.width * Cal.CHEGOU_FRAC
+        val toleranciaChegada = Cal.TOLERANCIA_CHEGADA_CASAS * pixelsPorCasa
 
-        val agora = SystemClock.uptimeMillis()
+        if (agora - ultimoLogResumoEm >= 15000L) {
+            ultimoLogResumoEm = agora
+            registrarResumoContadores(context, tela)
+        }
+
+        if (pausadoPorPinoPerdido) {
+            return formatarLog(
+                fase.name, indice, melhorScore, ultimoQtdVerde, ultimoRgbVerde, ultimaDistVerde, semProgresso, "PAUSADO_POR_PINO_PERDIDO"
+            )
+        }
+
         if (agora < pausadoAte) {
             return formatarLog(
                 fase.name, indice, melhorScore, ultimoQtdVerde, ultimoRgbVerde, ultimaDistVerde, semProgresso, "estabilizando"
@@ -908,16 +2058,31 @@ object Rota {
 
             if (agora >= ignorarSemRotaAte && temSemRota(tela)) {
                 quadrosSemRota++
-                if (quadrosSemRota >= 2) {
+                quadrosSemRotaSeguidos++
+                if (quadrosSemRotaSeguidos < 4) {
+                    ignorarSemRotaAte = agora + Cal.IGNORAR_SEM_ROTA_MS
+                } else {
                     quadrosSemRota = 0
+                    quadrosSemRotaSeguidos = 0
                     ignorarSemRotaAte = agora + Cal.IGNORAR_SEM_ROTA_MS
                     return registrarFalhaPino(
                         agora, fase.name, indice, melhorScore, ultimoQtdVerde, ultimoRgbVerde,
-                        ultimaDistVerde, semProgresso, "nao ha rota"
+                        ultimaDistVerde, semProgresso, "nao ha rota", context, tela
                     )
                 }
-            } else {
+            } else if (!temSemRota(tela)) {
                 quadrosSemRota = 0
+                quadrosSemRotaSeguidos = 0
+            }
+
+            if (iniciouCaminhadaEm > 0L && (agora - iniciouCaminhadaEm) >= tempoMaxPinoMs) {
+                val recMsg = executarEscadaRecuperacaoPino(
+                    tela, x0, y0, x1, y1, cx, cy, toleranciaChegada, agora, context, tocar, modelo
+                )
+                if (recMsg != null) {
+                    iniciouCaminhadaEm = agora
+                    return recMsg
+                }
             }
 
             val janelaTripla = retomarVerdeAte > 0L && agora <= retomarVerdeAte
@@ -937,6 +2102,8 @@ object Rota {
                 ultimoRgbVerde = rgbVerde
                 quadrosSumidoVerde = 0
                 ultimoVerdeRel = verdeRel
+                ultimoPosPinoConhecidaRel = verdeRel
+                ultimoPosPinoEraVerde = true
 
                 val absX = (x0 + verdeRel.first).toFloat()
                 val absY = (y0 + verdeRel.second).toFloat()
@@ -946,65 +2113,50 @@ object Rota {
                     menorDistVerde = dist
                 }
 
-                if (dist <= toleranciaChegada) {
-                    quadrosChegada++
-                    if (quadrosChegada >= 2) {
-                        if (!verdeVeioDeTemplate) {
-                            fase = FaseNavegacao.ESCOLHER
-                            verdeVeioDeTemplate = false
-                            quadrosChegada = 0
-                            ultimoVerdeRel = null
-                            vistoVerde = false
-                            return formatarLog(
-                                fase.name, indice, melhorScore, qtdVerde, rgbVerde, dist, semProgresso,
-                                "verde sem template - reescolhendo"
-                            )
-                        }
-                        ultimoConfirmado = alvo
-                        proximoPino(agora, context, tela)
-                        return formatarLog(
-                            "CHEGOU", indice, melhorScore, qtdVerde, rgbVerde, dist, semProgresso
-                        )
-                    }
+                val minimapaParadoSuficiente = !estadoMini.emMovimento && tempoParadoMs >= Cal.TEMPO_MINIMO_PARADO_CHEGADA_MS
+                if (chegouNoPino(dist, estadoMini, tempoParadoMs, vistoVerde, verdeVeioDeTemplate)) {
+                    ultimoConfirmado = alvo
+                    proximoPino(agora, "CHEGADA_CONFIRMADA", context, tela)
+                    return formatarLog(
+                        "CHEGOU", indice, melhorScore, qtdVerde, rgbVerde, dist, semProgresso,
+                        "CHEGOU motivo=confirmada"
+                    )
+                }
+                if (dist <= toleranciaChegada && minimapaParadoSuficiente && (vistoVerde || verdeVeioDeTemplate)) {
                     return formatarLog(
                         fase.name, indice, melhorScore, qtdVerde, rgbVerde, dist, semProgresso, "chegando"
                     )
                 }
 
-                quadrosChegada = 0
                 var logClique: String? = null
 
-                if (agora - ultimoClique >= intervaloCliqueMs) {
-                    val anteriorDist = ultimaDist
-                    if (anteriorDist >= 0f && dist >= anteriorDist - tela.width * 0.003f) semProgresso++ else {
-                        semProgresso = 0
-                        indiceCliqueVariavel = 0
-                    }
-                    ultimaDist = dist
-                    if (semProgresso >= 3 && anteriorDist >= 0f && abs(dist - anteriorDist) < 3f && dist <= toleranciaChegada * 1.2f) {
-                        ultimoConfirmado = alvo
-                        proximoPino(agora, context, tela)
-                        return formatarLog("CHEGOU", indice, melhorScore, qtdVerde, rgbVerde, dist, semProgresso, "chegada por parada")
-                    }
-                    val offsets = arrayOf(Pair(8f,0f),Pair(-8f,0f),Pair(0f,8f),Pair(0f,-8f),Pair(10f,6f),Pair(-10f,-6f),Pair(6f,-10f),Pair(-6f,10f))
-                    val off = if (semProgresso >= 2) offsets[indiceCliqueVariavel++ % offsets.size] else Pair(0f,0f)
-                    val minToqueX = 28f.coerceAtMost((tela.width - 1).toFloat())
-                    val maxToqueX = (tela.width * 0.985f - 20f).coerceAtLeast(minToqueX)
-                    val minToqueY = 28f.coerceAtMost((tela.height - 1).toFloat())
-                    val maxToqueY = (tela.height - 28f).coerceAtLeast(minToqueY)
-                    val px = (absX + off.first).coerceIn((x0 + 15f).coerceAtMost(maxToqueX), (x1 - 15f).coerceAtMost(maxToqueX)).coerceIn(minToqueX, maxToqueX)
-                    val py = (absY + off.second).coerceIn(y0 + 15f, y1 - 15f).coerceIn(minToqueY, maxToqueY)
+                if (!estadoMini.emMovimento && tempoParadoMs >= Cal.TEMPO_PARADO_RECLIQUE_MS && (agora - ultimoClique >= intervaloCliqueMs)) {
+                    semProgresso++
+                    val px = absX.coerceIn((x0 + 15f).coerceAtMost(maxToqueX(tela)), (x1 - 15f).coerceAtMost(maxToqueX(tela))).coerceIn(minToqueX(tela), maxToqueX(tela))
+                    val py = absY.coerceIn(y0 + 15f, y1 - 15f).coerceIn(minToqueY(tela), maxToqueY(tela))
                     val toque = dispararToqueSeguro(tela.width, tela.height, px, py, tocar)
                     ultimoClique = agora
                     cliquesVerde++
                     logClique = anexarTempoPosLuta("CLIQUE ${toque.first.toInt()},${toque.second.toInt()}", agora)
+                } else if (estadoMini.emMovimento) {
+                    semProgresso = 0
+                    indiceCliqueVariavel = 0
                 }
+                ultimaDist = dist
 
-                if (semProgresso >= 6 || cliquesVerde >= 12) {
+                if (!estadoMini.emMovimento && (semProgresso >= 6 || cliquesVerde >= 12)) {
+                    val recMsg = executarEscadaRecuperacaoPino(
+                        tela, x0, y0, x1, y1, cx, cy, toleranciaChegada, agora, context, tocar, modelo
+                    )
+                    if (recMsg != null) {
+                        semProgresso = 0
+                        cliquesVerde = 0
+                        return recMsg
+                    }
                     val progressoAntesReset = semProgresso
                     return registrarFalhaPino(
                         agora, fase.name, indice, melhorScore, qtdVerde, rgbVerde,
-                        dist, progressoAntesReset, "sem progresso - reescolhendo"
+                        dist, progressoAntesReset, "sem progresso - reescolhendo", context, tela
                     )
                 }
 
@@ -1032,30 +2184,48 @@ object Rota {
                     distRefAtual <= toleranciaChegada * 2.0f &&
                     (menorDistVerde < 0f || distRefAtual <= menorDistVerde * 1.25f)
 
-                if (vistoVerde && pertoDaCruz && quadrosSumidoVerde >= 2 && quadrosSumidoVerde < 6) {
+                val confirmadoSumido = if (vistoVerde && verdeVeioDeTemplate && pertoDaCruz && quadrosSumidoVerde < 6) {
+                    chegouNoPino(distRefAtual, estadoMini, tempoParadoMs, vistoVerde, verdeVeioDeTemplate)
+                } else {
+                    quadrosChegada = 0
+                    false
+                }
+                if (confirmadoSumido) {
                     val rgbRef = ultimoRgbVerde
-                    if (!verdeVeioDeTemplate) {
-                        fase = FaseNavegacao.ESCOLHER
-                        verdeVeioDeTemplate = false
-                        quadrosSumidoVerde = 0
-                        ultimoVerdeRel = null
-                        vistoVerde = false
-                        return formatarLog(
-                            fase.name, indice, melhorScore, 0, rgbRef, distRefAtual, semProgresso,
-                            "sob a cruz (verde sem template - reescolhendo)"
-                        )
-                    }
                     ultimoConfirmado = alvo
-                    proximoPino(agora, context, tela)
+                    proximoPino(agora, "CHEGADA_CONFIRMADA", context, tela)
                     return formatarLog(
-                        "CHEGOU", indice, melhorScore, 0, rgbRef, distRefAtual, semProgresso, "sob a cruz"
+                        "CHEGOU", indice, melhorScore, 0, rgbRef, distRefAtual, semProgresso,
+                        "CHEGOU motivo=confirmada sob a cruz"
                     )
                 }
 
-                if (quadrosSumidoVerde >= 6) {
+                if (!estadoMini.emMovimento && tempoParadoMs >= Cal.TEMPO_PARADO_RECLIQUE_MS && (agora - ultimoClique >= intervaloCliqueMs)) {
+                    val posReclique = ultimoPosPinoConhecidaRel
+                    if (posReclique != null) {
+                        val px = (x0 + posReclique.first).toFloat().coerceIn(minToqueX(tela), maxToqueX(tela))
+                        val py = (y0 + posReclique.second).toFloat().coerceIn(minToqueY(tela), maxToqueY(tela))
+                        val toque = dispararToqueSeguro(tela.width, tela.height, px, py, tocar)
+                        ultimoClique = agora
+                        val logReclique = anexarTempoPosLuta("CLIQUE ${toque.first.toInt()},${toque.second.toInt()}", agora)
+                        return formatarLog(
+                            fase.name, indice, melhorScore, 0, ultimoRgbVerde, distRefAtual, semProgresso,
+                            "reclique sem avancar alvo | $logReclique"
+                        )
+                    }
+                }
+
+                if (!estadoMini.emMovimento && quadrosSumidoVerde >= 6) {
+                    val recMsg = executarEscadaRecuperacaoPino(
+                        tela, x0, y0, x1, y1, cx, cy, toleranciaChegada, agora, context, tocar, modelo
+                    )
+                    if (recMsg != null) {
+                        quadrosSumidoVerde = 0
+                        return recMsg
+                    }
                     return registrarFalhaPino(
                         agora, fase.name, indice, melhorScore, 0, ultimoRgbVerde,
-                        ultimaDistVerde, semProgresso, "verde sumiu - reescolhendo"
+                        ultimaDistVerde, semProgresso, "verde sumiu - reescolhendo", context, tela
                     )
                 }
 
@@ -1065,10 +2235,10 @@ object Rota {
             }
         }
 
-        val minToqueX = 28f.coerceAtMost((tela.width - 1).toFloat())
-        val maxToqueX = (tela.width * 0.985f - 20f).coerceAtLeast(minToqueX)
-        val minToqueY = 28f.coerceAtMost((tela.height - 1).toFloat())
-        val maxToqueY = (tela.height - 28f).coerceAtLeast(minToqueY)
+        val minToqueXVal = minToqueX(tela)
+        val maxToqueXVal = maxToqueX(tela)
+        val minToqueYVal = minToqueY(tela)
+        val maxToqueYVal = maxToqueY(tela)
 
         val verdes = buscarComponentesVerdes(tela, x0, y0, x1, y1)
         if (verdes.isNotEmpty()) {
@@ -1082,8 +2252,8 @@ object Rota {
                 }
                 val distVerde = hypot(((x0 + verde.posicao.first) - cx).toDouble(), ((y0 + verde.posicao.second) - cy).toDouble()).toFloat()
                 if (distVerde > toleranciaChegada && agora - ultimoClique >= intervaloCliqueMs) {
-                    val px = (x0 + verde.posicao.first).toFloat().coerceIn(minToqueX, maxToqueX)
-                    val py = (y0 + verde.posicao.second).toFloat().coerceIn(minToqueY, maxToqueY)
+                    val px = (x0 + verde.posicao.first).toFloat().coerceIn(minToqueXVal, maxToqueXVal)
+                    val py = (y0 + verde.posicao.second).toFloat().coerceIn(minToqueYVal, maxToqueYVal)
                     val toque = dispararToqueSeguro(tela.width, tela.height, px, py, tocar)
                     ultimoClique = agora
                     iniciarCaminhada(verde.posicao, distVerde, agora, veioDeTemplate = true)
@@ -1132,8 +2302,8 @@ object Rota {
                 candidatoConsistente = null
                 val distFb = hypot((candidatoPos.first - cx).toDouble(), (candidatoPos.second - cy).toDouble()).toFloat()
                 if (distFb > toleranciaChegada && agora - ultimoClique >= intervaloCliqueMs) {
-                    val px = candidatoPos.first.toFloat().coerceIn(minToqueX, maxToqueX)
-                    val py = candidatoPos.second.toFloat().coerceIn(minToqueY, maxToqueY)
+                    val px = candidatoPos.first.toFloat().coerceIn(minToqueXVal, maxToqueXVal)
+                    val py = candidatoPos.second.toFloat().coerceIn(minToqueYVal, maxToqueYVal)
                     val toque = dispararToqueSeguro(
                         tela.width, tela.height, px, py, tocar
                     )
@@ -1143,7 +2313,7 @@ object Rota {
                     val logToque = anexarTempoPosLuta("CLIQUE ${toque.first.toInt()},${toque.second.toInt()}", agora)
                     return formatarLog(
                         fase.name, indice, scoreAtual, 0, ultimoRgbVerde, distFb, semProgresso,
-                        "$sentidoStr | $rivalLog | $logToque (fallback score)"
+                        "$sentidoStr | $rivalLog | $logToque (fallback score - sem avancar alvo)"
                     )
                 }
             }
@@ -1158,8 +2328,8 @@ object Rota {
                         ((y0 + verdeRel.second) - cy).toDouble()
                     ).toFloat()
                     if (distVerde > toleranciaChegada && agora - ultimoClique >= intervaloCliqueMs) {
-                        val px = (x0 + verdeRel.first).toFloat().coerceIn(minToqueX, maxToqueX)
-                        val py = (y0 + verdeRel.second).toFloat().coerceIn(minToqueY, maxToqueY)
+                        val px = (x0 + verdeRel.first).toFloat().coerceIn(minToqueXVal, maxToqueXVal)
+                        val py = (y0 + verdeRel.second).toFloat().coerceIn(minToqueYVal, maxToqueYVal)
                         val toque = dispararToqueSeguro(
                             tela.width, tela.height, px, py, tocar
                         )
@@ -1179,20 +2349,13 @@ object Rota {
             }
 
             naoVisto++
-            if (naoVisto >= Cal.NAO_VISTO_LIMITE) {
-                val resyncLog = tentarResyncPino(tela, x0, y0, x1, y1, cx, cy, toleranciaChegada, agora, context)
+            if (!estadoMini.emMovimento && naoVisto >= Cal.NAO_VISTO_LIMITE) {
+                val recMsg = executarEscadaRecuperacaoPino(
+                    tela, x0, y0, x1, y1, cx, cy, toleranciaChegada, agora, context, tocar, modelo
+                )
                 naoVisto = 0
-                if (resyncLog != null) {
-                    return formatarLog(
-                        fase.name,
-                        if (alvo in modelos.indices) modelos[alvo].indice else indice,
-                        melhorScore,
-                        0,
-                        ultimoRgbVerde,
-                        -1f,
-                        semProgresso,
-                        resyncLog
-                    )
+                if (recMsg != null) {
+                    return recMsg
                 }
                 return registrarFalhaPino(
                     agora, fase.name, indice, scoreAtual, 0, ultimoRgbVerde,
@@ -1208,15 +2371,31 @@ object Rota {
         quadrosQuaseLimiar = 0
         ultimoCandidatoQuaseLimiar = null
         candidatoConsistente = null
+        ultimoPosPinoConhecidaRel = Pair(achado.first - x0, achado.second - y0)
+        ultimoPosPinoEraVerde = false
         val dist = hypot((achado.first - cx).toDouble(), (achado.second - cy).toDouble()).toFloat()
 
         if (dist <= toleranciaChegada) {
             quadrosPertoDaCruz++
-            if (quadrosPertoDaCruz >= 3) {
+            val chegouPertoCruz = chegouNoPino(dist, estadoMini, tempoParadoMs, true, true)
+            if (quadrosPertoDaCruz >= 3 && chegouPertoCruz) {
+                quadrosPertoDaCruz = 0
                 ultimoConfirmado = alvo
-                proximoPino(agora, context, tela)
+                proximoPino(agora, "CHEGADA_CONFIRMADA", context, tela)
                 return formatarLog(
-                    "CHEGOU", indice, scoreAtual, 0, ultimoRgbVerde, dist, semProgresso, "perto da cruz | $rivalLog"
+                    "CHEGOU", indice, scoreAtual, 0, ultimoRgbVerde, dist, semProgresso,
+                    "CHEGOU motivo=confirmada perto da cruz | $rivalLog"
+                )
+            }
+            if (agora - ultimoClique >= intervaloCliqueMs) {
+                val px = achado.first.toFloat().coerceIn(minToqueXVal, maxToqueXVal)
+                val py = achado.second.toFloat().coerceIn(minToqueYVal, maxToqueYVal)
+                val toque = dispararToqueSeguro(tela.width, tela.height, px, py, tocar)
+                ultimoClique = agora
+                val logToque = anexarTempoPosLuta("CLIQUE ${toque.first.toInt()},${toque.second.toInt()}", agora)
+                return formatarLog(
+                    fase.name, indice, scoreAtual, 0, ultimoRgbVerde, dist, semProgresso,
+                    "perto da cruz reclique sem avancar | $rivalLog | $logToque"
                 )
             }
             return formatarLog(
@@ -1228,8 +2407,8 @@ object Rota {
 
         var logClique: String? = null
         if (agora - ultimoClique >= intervaloCliqueMs) {
-            val px = achado.first.toFloat().coerceIn(minToqueX, maxToqueX)
-            val py = achado.second.toFloat().coerceIn(minToqueY, maxToqueY)
+            val px = achado.first.toFloat().coerceIn(minToqueXVal, maxToqueXVal)
+            val py = achado.second.toFloat().coerceIn(minToqueYVal, maxToqueYVal)
             val toque = dispararToqueSeguro(
                 tela.width, tela.height, px, py, tocar
             )
@@ -1245,6 +2424,11 @@ object Rota {
             fase.name, indice, scoreAtual, 0, ultimoRgbVerde, dist, semProgresso, extra
         )
     }
+
+    private fun minToqueX(tela: Bitmap): Float = 28f.coerceAtMost((tela.width - 1).toFloat())
+    private fun maxToqueX(tela: Bitmap): Float = (tela.width * 0.985f - 20f).coerceAtLeast(minToqueX(tela))
+    private fun minToqueY(tela: Bitmap): Float = 28f.coerceAtMost((tela.height - 1).toFloat())
+    private fun maxToqueY(tela: Bitmap): Float = (tela.height - 28f).coerceAtLeast(minToqueY(tela))
 
     private fun tentarResyncPino(
         tela: Bitmap,
@@ -1319,20 +2503,7 @@ object Rota {
         val idAntigo = if (alvo in modelos.indices) modelos[alvo].indice else alvo
         val idNovo = modelos[escolhidoIdx].indice
         alvo = escolhidoIdx
-        falhasPino = 0
-        naoVisto = 0
-        semProgresso = 0
-        cliquesVerde = 0
-        quadrosChegada = 0
-        quadrosSumidoVerde = 0
-        quadrosPertoDaCruz = 0
-        ultimaDist = -1f
-        ultimaDistVerde = -1f
-        menorDistVerde = -1f
-        ultimoVerdeRel = null
-        vistoVerde = false
-        retomarVerdeAte = 0L
-        verdeVeioDeTemplate = false
+        estadoPino.reiniciar(preservarFalhas = false)
         fase = FaseNavegacao.ESCOLHER
         timestampsResync.addLast(agora)
 
@@ -1776,46 +2947,8 @@ object Rota {
     }
 
     fun temMonstro(tela: Bitmap): Boolean {
-        val x0 = (tela.width * Cal.BATALHA_X0)
-            .toInt().coerceIn(0, tela.width - 1)
-        val y0 = (tela.height * Cal.BATALHA_Y0)
-            .toInt().coerceIn(0, tela.height - 1)
-        val x1 = (tela.width * Cal.BATALHA_X1)
-            .toInt().coerceIn(x0 + 1, tela.width)
-        val y1 = (tela.height * Cal.BATALHA_Y1)
-            .toInt().coerceIn(y0 + 1, tela.height)
-
-        val rw = x1 - x0
-        val rh = y1 - y0
-
-        if (rw <= 0 || rh <= 0) return false
-
-        val px = IntArray(rw * rh)
-        tela.getPixels(px, 0, rw, x0, y0, rw, rh)
-
-        var pixelsDestaque = 0
-        var pixelsBarraVida = 0
-
-        for (p in px) {
-            val r = (p shr 16) and 0xFF
-            val g = (p shr 8) and 0xFF
-            val b = p and 0xFF
-
-            val ehFundoEscuro =
-                r <= 32 && g <= 42 && b >= 18 && b <= 75
-
-            if (!ehFundoEscuro && (r > 95 || g > 105 || b > 125)) {
-                pixelsDestaque++
-            }
-            val ehVerdeHp = g >= 155 && r <= 85 && b <= 90
-            val ehAmareloOuLaranjaHp = r >= 165 && g in 70..225 && b <= 85
-            val ehVermelhoHp = r >= 155 && g <= 75 && b <= 75
-            if (ehVerdeHp || ehAmareloOuLaranjaHp || ehVermelhoHp) {
-                pixelsBarraVida++
-            }
-        }
-
-        return pixelsBarraVida >= 8 && pixelsDestaque >= 220
+        val linhas = contarLinhasOcupadasBattle(tela)
+        return linhas > 0
     }
 
     fun acharCruz(

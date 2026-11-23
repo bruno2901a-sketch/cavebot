@@ -53,6 +53,11 @@ class BotService : Service() {
         const val EXTRA_LOOT_MS = "loot_ms"
         const val EXTRA_LOOT_MAX_S = "loot_max_s"
         const val EXTRA_PINO_MS = "pino_ms"
+        const val EXTRA_PIXELS_POR_CASA = "pixels_por_casa"
+        const val EXTRA_TAMANHO_CASA_PX = "tamanho_casa_px"
+        const val EXTRA_LIMIAR_MINIMAPA_PARADO = "limiar_minimapa_parado"
+        const val EXTRA_REF_BARRA_TITULO_X = "ref_barra_titulo_x"
+        const val EXTRA_REF_BARRA_TITULO_Y = "ref_barra_titulo_y"
 
         private const val CANAL = "rotabot_rota"
         private const val NOTIFICACAO_ID = 71
@@ -63,7 +68,7 @@ class BotService : Service() {
         fun tocarAlarme(ctx: Context, uriStr: String, volumeProgresso: Int) {
             try {
                 if (mediaPlayer == null) {
-                    val uri = if (uriStr.isNotEmpty()) Uri.parse(uriStr) else RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                    val uri = if (uriStr.isNotEmpty() && uriStr != "alarme_pino") Uri.parse(uriStr) else RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
                     mediaPlayer = MediaPlayer().apply {
                         setDataSource(ctx, uri)
                         setAudioAttributes(
@@ -156,6 +161,8 @@ class BotService : Service() {
             ACAO_RETOMAR -> {
                 Rota.cancelarAutoloot = false
                 pausaManual = false
+                Rota.retomarPausaPinoPerdido()
+                BotService.pararAlarme()
             }
             ACAO_PARAR -> {
                 Rota.cancelarAutoloot = true
@@ -170,6 +177,32 @@ class BotService : Service() {
             val channel = NotificationChannel(CANAL, "RotaBot Service", NotificationManager.IMPORTANCE_LOW)
             val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
             manager.createNotificationChannel(channel)
+        }
+    }
+
+    private fun capturarQuadroSobDemanda(): Bitmap? {
+        val reader = imageReader ?: return null
+        val img = try {
+            reader.acquireLatestImage()
+        } catch (_: Exception) {
+            null
+        } ?: return null
+        return try {
+            val plane = img.planes[0]
+            val rowPixels = plane.rowStride / plane.pixelStride
+            val raw = Bitmap.createBitmap(rowPixels, img.height, Bitmap.Config.ARGB_8888)
+            raw.copyPixelsFromBuffer(plane.buffer)
+            if (rowPixels != img.width) {
+                val cortado = Bitmap.createBitmap(raw, 0, 0, img.width, img.height)
+                raw.recycle()
+                cortado
+            } else {
+                raw
+            }
+        } catch (_: Exception) {
+            null
+        } finally {
+            img.close()
         }
     }
 
@@ -188,13 +221,24 @@ class BotService : Service() {
         val lootMs = intent.getIntExtra(EXTRA_LOOT_MS, 100).coerceIn(30, 500)
         val lootMaxS = intent.getIntExtra(EXTRA_LOOT_MAX_S, 40).coerceIn(5, 120)
         val pinoMs = intent.getIntExtra(EXTRA_PINO_MS, 700).coerceIn(300, 2000)
+        val pxPorCasa = intent.getFloatExtra(EXTRA_PIXELS_POR_CASA, Cal.PIXELS_POR_CASA_PADRAO).coerceIn(4f, 200f)
+        val tamCasaPx = intent.getFloatExtra(EXTRA_TAMANHO_CASA_PX, Cal.TAMANHO_CASA_PX_PADRAO).coerceIn(10f, 300f)
+        val limiarParado = intent.getFloatExtra(EXTRA_LIMIAR_MINIMAPA_PARADO, Cal.LIMIAR_MINIMAPA_PARADO_PADRAO).coerceIn(0.1f, 100f)
+        val refBarraX = intent.getFloatExtra(EXTRA_REF_BARRA_TITULO_X, Cal.REF_BARRA_TITULO_X_PADRAO).coerceIn(0f, 1f)
+        val refBarraY = intent.getFloatExtra(EXTRA_REF_BARRA_TITULO_Y, Cal.REF_BARRA_TITULO_Y_PADRAO).coerceIn(0f, 1f)
 
         alarmeSegAtual = alarmeS
         Rota.limiteAlarmeMs = alarmeS * 1000L
         Rota.intervaloLootMs = lootMs.toLong()
         Rota.maxAutolootMs = lootMaxS * 1000L
         Rota.intervaloCliqueMs = pinoMs.toLong()
+        Rota.pixelsPorCasa = pxPorCasa
+        Rota.tamanhoCasaPx = tamCasaPx
+        Rota.limiarMinimapaParado = limiarParado
+        Rota.refBarraTituloX = refBarraX
+        Rota.refBarraTituloY = refBarraY
         Rota.cancelarAutoloot = false
+        Rota.capturadorQuadroLoot = { capturarQuadroSobDemanda() }
 
         val resultCode = intent.getIntExtra(EXTRA_RESULTADO, 0)
         val data = if (Build.VERSION.SDK_INT >= 33) {
@@ -376,7 +420,7 @@ class BotService : Service() {
     }
 
     private fun atualizarContadoresOverlay() {
-        val textoContadores = "Lutas ${Rota.lutas} | Loots ${Rota.autoloots} | Alarme ${alarmeSegAtual}s"
+        val textoContadores = "Chegadas ${Rota.chegadasConfirmadas} | Pulos ${Rota.pulosPino} | Lutas ${Rota.lutas} | Loots ${Rota.autoloots}"
         handler.post { contadorView?.text = textoContadores }
     }
 
@@ -409,7 +453,7 @@ class BotService : Service() {
             painel.addView(statusView)
 
             contadorView = TextView(this).apply {
-                text = "Lutas ${Rota.lutas} | Loots ${Rota.autoloots} | Alarme ${alarmeSegAtual}s"
+                text = "Chegadas ${Rota.chegadasConfirmadas} | Pulos ${Rota.pulosPino} | Lutas ${Rota.lutas} | Loots ${Rota.autoloots}"
                 setTextColor(Color.LTGRAY)
                 textSize = 10f
                 maxLines = 1
@@ -442,6 +486,8 @@ class BotService : Service() {
                         } else {
                             Rota.cancelarAutoloot = false
                             pausaManual = false
+                            Rota.retomarPausaPinoPerdido()
+                            BotService.pararAlarme()
                         }
                         text = if (pausaManual) "Retomar" else "Pausar"
                         atualizarContadoresOverlay()
@@ -511,6 +557,7 @@ class BotService : Service() {
     }
 
     private fun liberarCaptura() {
+        Rota.capturadorQuadroLoot = null
         virtualDisplay?.release()
         virtualDisplay = null
         imageReader?.close()

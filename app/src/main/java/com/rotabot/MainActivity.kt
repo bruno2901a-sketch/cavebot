@@ -39,7 +39,7 @@ class MainActivity : Activity() {
             setPadding(36, 36, 36, 36)
         }
         val titulo = TextView(this).apply {
-            text = "RotaBot\n\n1. Permita a sobreposição.\n2. Ative a acessibilidade.\n3. Autorize a captura da tela.\n4. Ajuste as opções e inicie."
+            text = "RotaBot v1.7.0\n\n1. Permita a sobreposição.\n2. Ative a acessibilidade.\n3. Autorize a captura da tela.\n4. Ajuste as opções e inicie."
             textSize = 14f
         }
         val inicio = EditText(this).apply {
@@ -110,6 +110,11 @@ class MainActivity : Activity() {
         val lootIntervaloSalvo = prefs.getInt("intervalo_loot_ms", 100).coerceIn(30, 500)
         val lootMaxSalvo = prefs.getInt("tempo_max_autoloot_s", 40).coerceIn(5, 120)
         val pinoIntervaloSalvo = prefs.getInt("intervalo_pino_ms", 700).coerceIn(300, 2000)
+        val pxPorCasaSalvo = prefs.getFloat("pixels_por_casa", Cal.PIXELS_POR_CASA_PADRAO).coerceIn(4f, 200f)
+        val tamCasaPxSalvo = prefs.getFloat("tamanho_casa_px", Cal.TAMANHO_CASA_PX_PADRAO).coerceIn(10f, 300f)
+        val limiarParadoSalvo = prefs.getFloat("limiar_minimapa_parado", Cal.LIMIAR_MINIMAPA_PARADO_PADRAO).coerceIn(0.1f, 100f)
+        val refBarraXSalvo = prefs.getFloat("ref_barra_titulo_x", Cal.REF_BARRA_TITULO_X_PADRAO).coerceIn(0f, 1f)
+        val refBarraYSalvo = prefs.getFloat("ref_barra_titulo_y", Cal.REF_BARRA_TITULO_Y_PADRAO).coerceIn(0f, 1f)
 
         val labelTempoAlarme = TextView(this).apply { text = "Tempo do alarme (s)" }
         val editTempoAlarme = EditText(this).apply {
@@ -130,6 +135,44 @@ class MainActivity : Activity() {
             hint = "Tempo máximo do autoloot (s) [5-120]"
             setText(lootMaxSalvo.toString())
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
+        }
+
+        val labelPxPorCasa = TextView(this).apply { text = "Pixels por casa (minimapa)" }
+        val editPxPorCasa = EditText(this).apply {
+            hint = "Pixels por casa (ex: 16.0)"
+            setText(pxPorCasaSalvo.toString())
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+        }
+
+        val labelTamCasaPx = TextView(this).apply { text = "Tamanho da casa em pixels (jogo)" }
+        val editTamCasaPx = EditText(this).apply {
+            hint = "Tamanho da casa em px (ex: 88.0)"
+            setText(tamCasaPxSalvo.toString())
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+        }
+
+        val labelLimiarParado = TextView(this).apply { text = "Limiar de minimapa parado (padrão 3.2)" }
+        val editLimiarParado = EditText(this).apply {
+            hint = "Limiar minimapa parado (ex: 3.2)"
+            setText(limiarParadoSalvo.toString())
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+        }
+
+        val labelRefBarraTitulo = TextView(this).apply { text = "Referência barra de título loot (X, Y fração)" }
+        val editRefBarraX = EditText(this).apply {
+            hint = "Ref barra título X (ex: 0.620)"
+            setText(refBarraXSalvo.toString())
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+        }
+        val editRefBarraY = EditText(this).apply {
+            hint = "Ref barra título Y (ex: 0.145)"
+            setText(refBarraYSalvo.toString())
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
+        }
+
+        val contadoresResumoView = TextView(this).apply {
+            text = "Chegadas: ${Rota.chegadasConfirmadas} | Pulos: ${Rota.pulosPino}"
+            textSize = 13f
         }
 
         val containerAvancado = LinearLayout(this).apply {
@@ -180,12 +223,22 @@ class MainActivity : Activity() {
                 val lootMs = (editIntervaloLoot.text.toString().toIntOrNull() ?: 100).coerceIn(30, 500)
                 val lootMaxS = (editMaxAutoloot.text.toString().toIntOrNull() ?: 40).coerceIn(5, 120)
                 val pinoMs = (editIntervaloPino.text.toString().toIntOrNull() ?: 700).coerceIn(300, 2000)
+                val pxPorCasa = (editPxPorCasa.text.toString().replace(',', '.').toFloatOrNull() ?: Cal.PIXELS_POR_CASA_PADRAO).coerceIn(4f, 200f)
+                val tamCasaPx = (editTamCasaPx.text.toString().replace(',', '.').toFloatOrNull() ?: Cal.TAMANHO_CASA_PX_PADRAO).coerceIn(10f, 300f)
+                val limiarParado = (editLimiarParado.text.toString().replace(',', '.').toFloatOrNull() ?: Cal.LIMIAR_MINIMAPA_PARADO_PADRAO).coerceIn(0.1f, 100f)
+                val refBarraX = (editRefBarraX.text.toString().replace(',', '.').toFloatOrNull() ?: Cal.REF_BARRA_TITULO_X_PADRAO).coerceIn(0f, 1f)
+                val refBarraY = (editRefBarraY.text.toString().replace(',', '.').toFloatOrNull() ?: Cal.REF_BARRA_TITULO_Y_PADRAO).coerceIn(0f, 1f)
 
                 prefs.edit()
                     .putInt("tempo_alarme_s", alarmeS)
                     .putInt("intervalo_loot_ms", lootMs)
                     .putInt("tempo_max_autoloot_s", lootMaxS)
                     .putInt("intervalo_pino_ms", pinoMs)
+                    .putFloat("pixels_por_casa", pxPorCasa)
+                    .putFloat("tamanho_casa_px", tamCasaPx)
+                    .putFloat("limiar_minimapa_parado", limiarParado)
+                    .putFloat("ref_barra_titulo_x", refBarraX)
+                    .putFloat("ref_barra_titulo_y", refBarraY)
                     .apply()
 
                 val usaAlertaFinal = if (modoSoAlarme) true else checkAlerta.isChecked
@@ -204,6 +257,11 @@ class MainActivity : Activity() {
                     .putExtra(BotService.EXTRA_LOOT_MS, lootMs)
                     .putExtra(BotService.EXTRA_LOOT_MAX_S, lootMaxS)
                     .putExtra(BotService.EXTRA_PINO_MS, pinoMs)
+                    .putExtra(BotService.EXTRA_PIXELS_POR_CASA, pxPorCasa)
+                    .putExtra(BotService.EXTRA_TAMANHO_CASA_PX, tamCasaPx)
+                    .putExtra(BotService.EXTRA_LIMIAR_MINIMAPA_PARADO, limiarParado)
+                    .putExtra(BotService.EXTRA_REF_BARRA_TITULO_X, refBarraX)
+                    .putExtra(BotService.EXTRA_REF_BARRA_TITULO_Y, refBarraY)
 
                 if (Build.VERSION.SDK_INT >= 26) startForegroundService(serviceIntent) else startService(serviceIntent)
                 finish()
@@ -211,6 +269,7 @@ class MainActivity : Activity() {
         }
 
         tela.addView(titulo)
+        tela.addView(contadoresResumoView)
         tela.addView(inicio)
         tela.addView(fim)
         tela.addView(checkLoot)
@@ -222,6 +281,15 @@ class MainActivity : Activity() {
         tela.addView(editIntervaloLoot)
         tela.addView(labelMaxAutoloot)
         tela.addView(editMaxAutoloot)
+        tela.addView(labelPxPorCasa)
+        tela.addView(editPxPorCasa)
+        tela.addView(labelTamCasaPx)
+        tela.addView(editTamCasaPx)
+        tela.addView(labelLimiarParado)
+        tela.addView(editLimiarParado)
+        tela.addView(labelRefBarraTitulo)
+        tela.addView(editRefBarraX)
+        tela.addView(editRefBarraY)
         tela.addView(btnAvancado)
         tela.addView(containerAvancado)
         tela.addView(labelVolume)
@@ -253,6 +321,13 @@ class MainActivity : Activity() {
             addView(tela)
         }
         setContentView(rolagem)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        findViewById<View>(android.R.id.content)?.post {
+            // Atualiza contadores se visivel
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
