@@ -283,7 +283,11 @@ object Rota {
             else Bitmap.createScaledBitmap(raw, lado, lado, true).also {
                 if (it !== raw) raw.recycle()
             }
-            lista.add(Modelo(n, bmp))
+            try {
+                lista.add(Modelo(n, bmp))
+            } finally {
+                if (!bmp.isRecycled) bmp.recycle()
+            }
         }
 
         check(lista.size == fim - inicio + 1) {
