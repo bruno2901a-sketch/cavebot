@@ -12,7 +12,6 @@ object Cal {
     const val VERDE_R_MAX = 89
     const val VERDE_B_MAX = 89
     const val TOLERANCIA_CHEGADA_CASAS = 1.5f
-    const val PERMITIR_PULO = false
     const val TOTAL_ICONES = 20
     const val MINIMAPA_X0 = 0.848f
     const val MINIMAPA_Y0 = 0.135f
