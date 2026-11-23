@@ -167,7 +167,7 @@ object LogRota {
             null
         }
 
-        val timestampHora = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
+        val timestampHora = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.ROOT).format(Date())
         val timestampArquivo = SimpleDateFormat("HHmmss_SSS", Locale.getDefault()).format(Date())
 
         executor.execute {
@@ -316,25 +316,21 @@ object LogRota {
         if (!linha.startsWith("[") || linha.length < 13) return null
         val fimIdx = linha.indexOf(']')
         if (fimIdx < 9) return null
-        val horaStr = linha.substring(1, fimIdx).trim()
-        val partes = horaStr.split(":")
-        if (partes.size != 3) return null
-        val h = partes[0].toIntOrNull() ?: return null
-        val m = partes[1].toIntOrNull() ?: return null
-        val secPartes = partes[2].split(".")
-        val s = secPartes[0].toIntOrNull() ?: return null
-        val ms = if (secPartes.size > 1) secPartes[1].padEnd(3, '0').take(3).toIntOrNull() ?: 0 else 0
-        if (h !in 0..23 || m !in 0..59 || s !in 0..59 || ms !in 0..999) return null
-        return ((h * 3600L + m * 60L + s) * 1000L) + ms
+        val valor = linha.substring(1, fimIdx).trim()
+        val formatoCompleto = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.ROOT)
+        formatoCompleto.isLenient = false
+        formatoCompleto.parse(valor)?.let { return it.time }
+
+        // Compatibilidade com linhas antigas que guardavam somente a hora.
+        val dataHoje = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(Date())
+        val formatoAntigo = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.ROOT)
+        formatoAntigo.isLenient = false
+        return try { formatoAntigo.parse("$dataHoje $valor")?.time } catch (_: Exception) { null }
     }
 
     private fun dentroJanela15Min(msLinha: Long, msReferencia: Long): Boolean {
         val janelaMs = 15L * 60L * 1000L
-        val diaMs = 24L * 3600L * 1000L
-        var diff = msReferencia - msLinha
-        if (diff < 0L) {
-            diff += diaMs
-        }
+        val diff = msReferencia - msLinha
         return diff in 0L..janelaMs
     }
 
@@ -360,8 +356,8 @@ object LogRota {
                 return@execute
             }
 
-            // Passada 1: ler antigo e depois atual linha a linha, sem guardar linhas, guardando a hora (ms) da ultima linha valida
-            var msReferencia: Long? = null
+            // A janela é calculada em relação ao relógio atual, não à última linha gravada.
+            val msReferencia = System.currentTimeMillis()
             for (arq in arquivosLog) {
                 try {
                     arq.bufferedReader(Charsets.UTF_8).useLines { seq ->
@@ -375,12 +371,7 @@ object LogRota {
                 } catch (_: Exception) {}
             }
 
-            if (msReferencia == null) {
-                val agoraFmt = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
-                msReferencia = parsearHoraMs("[$agoraFmt]") ?: 0L
-            }
-
-            val refMs = msReferencia!!
+            val refMs = msReferencia
 
             try {
                 val arq15 = File(baseDir, "rotabot_log_ultimos15min.txt")
