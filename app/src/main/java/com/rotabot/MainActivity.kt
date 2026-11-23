@@ -26,6 +26,29 @@ class MainActivity : ComponentActivity() {
     private var dadosCaptura: Intent? = null
     private var resultadoCaptura = 0
     private var uriSomSelecionado: String = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)?.toString() ?: ""
+    private var contadoresResumoView: TextView? = null
+
+    private val capturaLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { resultado ->
+        if (resultado.resultCode == RESULT_OK && resultado.data != null) {
+            resultadoCaptura = resultado.resultCode
+            dadosCaptura = resultado.data
+            Toast.makeText(this, "Captura autorizada. Toque em Iniciar.", Toast.LENGTH_SHORT).show()
+        } else {
+            resultadoCaptura = 0
+            dadosCaptura = null
+            Toast.makeText(this, "A captura é necessária.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private val somLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { resultado ->
+        if (resultado.resultCode == RESULT_OK && resultado.data != null) {
+            val uri = if (Build.VERSION.SDK_INT >= 33) resultado.data?.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI, Uri::class.java) else resultado.data?.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
+            if (uri != null) {
+                uriSomSelecionado = uri.toString()
+                getSharedPreferences("rotabot_prefs", Context.MODE_PRIVATE).edit().putString("uri_som", uriSomSelecionado).apply()
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
