@@ -134,7 +134,7 @@ class BotService : Service() {
     private var uriSomAlerta = ""
 
     private val projectionCallback = object : MediaProjection.Callback() {
-        override fun onStop() { pararTudo("Captura encerrada.") }
+        override fun onStop() { handler.post { pararTudo("Captura encerrada.") } }
     }
 
     private val ciclo = object : Runnable {
@@ -359,11 +359,10 @@ class BotService : Service() {
 
 
         try {
-            val copiaLog = frame.copy(Bitmap.Config.ARGB_8888, false)
-            if (copiaLog != null) {
-                ultimoFrameLog?.recycle()
-                ultimoFrameLog = copiaLog
-            }
+            // Miniatura para logs; evita manter outra cópia integral de ~10 MB por ciclo.
+            val copiaLog = Bitmap.createScaledBitmap(frame, (frame.width / 4).coerceAtLeast(1), (frame.height / 4).coerceAtLeast(1), true)
+            ultimoFrameLog?.recycle()
+            ultimoFrameLog = copiaLog
         } catch (_: Exception) {}
 
         try {
@@ -447,12 +446,12 @@ class BotService : Service() {
 
     private fun registrarStatus(msg: String) {
         atualizarContadoresOverlay()
-        if (statusAtual == msg) return
-        statusAtual = msg
+        val mudou = statusAtual != msg
+        if (mudou) statusAtual = msg
         val curto = statusCurto(msg)
         val pinoPerdido = Rota.estaPausadoPorPinoPerdido()
         handler.post {
-            statusView?.text = "✥ $curto"
+            if (mudou) statusView?.text = "✥ $curto"
             controleRotaView?.text = when {
                 pinoPerdido -> "Retomar"
                 !rotaIniciada -> "Iniciar"
