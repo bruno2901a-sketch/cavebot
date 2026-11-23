@@ -2369,9 +2369,7 @@ if (!gestoItem.first) {
         while (timestampsResync.isNotEmpty() && agora - timestampsResync.first() > 60000L) {
             timestampsResync.removeFirst()
         }
-        if (timestampsResync.size >= 2) {
-            return null
-        }
+        if (timestampsResync.size >= 2) return null
 
         val tamanho = modelos.size
         val esperadoIdx: Int? = if (tamanho <= 1) {
@@ -2382,14 +2380,50 @@ if (!gestoItem.first) {
             if (refIdx > 0) refIdx - 1 else (refIdx + 1).coerceAtMost(tamanho - 1)
         }
 
+        val posicoesCandidatas = HashMap<Int, Pair<Int, Int>>()
+        val origensVerdes = HashSet<Int>()
+
         fun avaliarCandidato(idxCandidato: Int?): Pair<Boolean, Float>? {
             if (idxCandidato == null || idxCandidato !in modelos.indices) return null
-            val busca = buscarTemplateSemAlterarEstado(tela, x0, y0, x1, y1, modelos[idxCandidato], cx, cy)
-            val pos = busca.first ?: return null
-            if (busca.second < Cal.LIMIAR.toDouble()) return null
-            val dist = hypot((pos.first - cx).toDouble(), (pos.second - cy).toDouble()).toFloat()
-            if (dist <= toleranciaChegada) return null
-            return Pair(true, dist)
+            val modeloCandidato = modelos[idxCandidato]
+
+            val buscaTemplate = buscarTemplateSemAlterarEstado(
+                tela, x0, y0, x1, y1, modeloCandidato, cx, cy
+            )
+            val posTemplate = buscaTemplate.first
+            if (posTemplate != null && buscaTemplate.second >= Cal.LIMIAR.toDouble()) {
+                val distTemplate = hypot(
+                    (posTemplate.first - cx).toDouble(),
+                    (posTemplate.second - cy).toDouble()
+                ).toFloat()
+                if (distTemplate > toleranciaChegada) {
+                    posicoesCandidatas[idxCandidato] = posTemplate
+                    origensVerdes.remove(idxCandidato)
+                    return Pair(true, distTemplate)
+                }
+            }
+
+            // Se o template não localizar o ícone, tenta o marcador verde,
+            // mas só aceita quando o desenho corresponde exclusivamente ao pino avaliado.
+            val verdes = buscarComponentesVerdes(tela, x0, y0, x1, y1)
+            for (verde in verdes) {
+                val validacao = avaliarPinoVerdeComModelos(
+                    tela, x0, y0, x1, y1, verde.posicao, modeloCandidato
+                )
+                if (!validacao.valido) continue
+
+                val posAbs = Pair(x0 + verde.posicao.first, y0 + verde.posicao.second)
+                val distVerde = hypot(
+                    (posAbs.first - cx).toDouble(),
+                    (posAbs.second - cy).toDouble()
+                ).toFloat()
+                if (distVerde <= toleranciaChegada) continue
+
+                posicoesCandidatas[idxCandidato] = posAbs
+                origensVerdes.add(idxCandidato)
+                return Pair(true, distVerde)
+            }
+            return null
         }
 
         val resEsperado = avaliarCandidato(esperadoIdx)
@@ -2419,18 +2453,28 @@ if (!gestoItem.first) {
         }
 
         if (escolhidoIdx == null || escolhidoIdx !in modelos.indices) return null
-        if (abs(escolhidoIdx - refIdx) > 1) return null
-        if (escolhidoIdx == alvo) return null
+        if (abs(escolhidoIdx - refIdx) > 1 || escolhidoIdx == alvo) return null
 
         val idAntigo = if (alvo in modelos.indices) modelos[alvo].indice else alvo
         val idNovo = modelos[escolhidoIdx].indice
+        val posicaoConfirmada = posicoesCandidatas[escolhidoIdx]
+        val origemVerde = escolhidoIdx in origensVerdes
+
         alvo = escolhidoIdx
         estadoPino.reiniciar(preservarFalhas = false)
+        if (posicaoConfirmada != null && origemVerde) {
+            val posRel = Pair(posicaoConfirmada.first - x0, posicaoConfirmada.second - y0)
+            ultimoPosPinoConhecidaRel = posRel
+            ultimoPosPinoEraVerde = true
+            ultimoVerdeRel = posRel
+            vistoVerde = true
+        }
         fase = FaseNavegacao.ESCOLHER
         timestampsResync.addLast(agora)
 
         registrarLogAlvo(context, tela)
-        return "RESYNC alvo $idAntigo->$idNovo"
+        val origem = if (origemVerde) "verde_validado" else "template"
+        return "RESYNC alvo $idAntigo->$idNovo origem=$origem"
     }
 
     private fun regiaoQuasePreta(pixels: IntArray, largura: Int, x: Int, y: Int, w: Int, h: Int): Boolean {
