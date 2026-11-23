@@ -24,13 +24,8 @@ object Cal {
     const val BATALHA_Y0 = 0.203f
     const val BATALHA_X1 = 0.181f
     const val BATALHA_Y1 = 0.392f
-    const val SEM_ROTA_X0 = 0.485f
-    const val SEM_ROTA_Y0 = 0.750f
-    const val SEM_ROTA_X1 = 0.555f
-    const val SEM_ROTA_Y1 = 0.785f
     const val MAX_FALHAS_PINO = 3
     const val IGNORAR_LUTA_MS = 4000L
-    const val IGNORAR_SEM_ROTA_MS = 2500L
     const val NAO_VISTO_LIMITE = 24
     const val PIXELS_POR_CASA_PADRAO = 16.0f
     const val TAMANHO_CASA_PX_PADRAO = 88.0f
