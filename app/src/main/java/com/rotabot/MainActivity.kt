@@ -299,8 +299,29 @@ class MainActivity : ComponentActivity() {
                     .apply()
 
                 val usaAlertaFinal = if (modoSoAlarme) true else checkAlerta.isChecked
+                val config = BotConfig(
+                    marcadorInicio = a,
+                    marcadorFim = b,
+                    usaLoot = checkLoot.isChecked,
+                    usaAlerta = usaAlertaFinal,
+                    somenteAlarme = modoSoAlarme,
+                    modoCircular = checkCircular.isChecked,
+                    salvarPrints = checkSalvarPrints.isChecked,
+                    volumeAlerta = seekVolume.progress,
+                    uriSomAlerta = uriSomSelecionado,
+                    limiteAlarmeSegundos = alarmeS,
+                    intervaloLootMs = lootMs,
+                    maxAutolootSegundos = lootMaxS,
+                    intervaloPinoMs = pinoMs,
+                    pixelsPorCasa = pxPorCasa,
+                    tamanhoCasaPx = tamCasaPx,
+                    limiarMinimapaParado = limiarParado,
+                    refBarraTituloX = refBarraX,
+                    refBarraTituloY = refBarraY
+                ).validado()
                 val serviceIntent = Intent(this@MainActivity, BotService::class.java)
                     .setAction(BotService.ACAO_INICIAR)
+                    .putExtra(BotService.EXTRA_CONFIG, config)
                     .putExtra(BotService.EXTRA_INICIO, a)
                     .putExtra(BotService.EXTRA_FIM, b)
                     .putExtra(BotService.EXTRA_RESULTADO, resultadoCaptura)
