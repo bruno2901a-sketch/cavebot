@@ -553,8 +553,10 @@ class BotService : Service() {
 
     private fun statusCurto(texto: String): String {
         val limpa = texto.substringBefore(" | ").trim()
+        if (Rota.estaPausadoPorPinoPerdido() || texto.contains("PAUSADO_POR_PINO_PERDIDO", ignoreCase = true)) {
+            return "Pino perdido - bot pausado"
+        }
         if (limpa == "Pausado") return "Pausado"
-        if (texto.contains("PAUSADO_POR_PINO_PERDIDO", ignoreCase = true)) return "Pino perdido - bot pausado"
         if (limpa.startsWith("RESYNC", ignoreCase = true)) return "Reajustando pino"
         if (limpa.startsWith("AUTOLOOT", ignoreCase = true)) return "Pegando loot"
         if (limpa.startsWith("ALARME", ignoreCase = true)) {
