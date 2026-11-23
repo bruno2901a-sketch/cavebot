@@ -1,6 +1,8 @@
 package com.rotabot
 
-import android.app.Activity
+import androidx.activity.ComponentActivity
+import androidx.activity.result.contract.ActivityResultContracts
+import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.media.RingtoneManager
@@ -19,7 +21,7 @@ import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 
-class MainActivity : Activity() {
+class MainActivity : ComponentActivity() {
     private val codigoCaptura = 42
     private var dadosCaptura: Intent? = null
     private var resultadoCaptura = 0
