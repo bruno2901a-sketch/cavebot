@@ -1838,15 +1838,15 @@ if (!gestoItem.first) {
             if (usaLoot) {
                 executarAutoloot(tela.width, tela.height, context, tela)
             }
-            val fimProcessamentoLutaLootMs = SystemClock.uptimeMillis()
-            fimLutaEm = fimProcessamentoLutaLootMs
-            val duracaoPausaTotalMs = duracaoTotalLutaMs + (fimProcessamentoLutaLootMs - antesLootMs).coerceAtLeast(0L)
+            val agoraPosLoot = SystemClock.uptimeMillis()
+            fimLutaEm = agoraPosLoot
+            val duracaoPausaTotalMs = duracaoTotalLutaMs + (agoraPosLoot - antesLootMs).coerceAtLeast(0L)
             if (iniciouCaminhadaEm > 0L && duracaoPausaTotalMs > 0L) {
                 iniciouCaminhadaEm += duracaoPausaTotalMs
             }
 
             ultimoClique = 0L
-            pausadoAte = agora + 200L
+            pausadoAte = agoraPosLoot + 200L
             quadrosChegada = 0
             quadrosSumidoVerde = 0
             ultimaDist = -1f
@@ -1856,40 +1856,67 @@ if (!gestoItem.first) {
             cliquesVerde = 0
             naoVisto = 0
 
-            if (veioDeCaminhando && refVerde != null) {
-                if (buscarComponentesVerdes(tela, x0, y0, x1, y1).isEmpty()) {
-                    fase = FaseNavegacao.ESCOLHER
-                    retomarVerdeAte = 0L
-                    verdeVeioDeTemplate = false
-                    ultimoVerdeRel = null
-                    vistoVerde = false
-                    falhasPino = 0
-                    return if (usaLoot) "AUTOLOOT concluído - sem verde apos luta - ESCOLHER" else "MONSTRO MORREU - sem verde apos luta - ESCOLHER"
-                }
-                fase = FaseNavegacao.CAMINHANDO
-                ultimoVerdeRel = refVerde
-                retomarVerdeAte = agora + 2000L
-                iniciouCaminhadaEm = agora
-                tempoMaxPinoMs = calcularTempoMaxPinoMs(if (ultimaDistVerde > 0f) ultimaDistVerde else pixelsPorCasa * 4f)
-                return if (usaLoot) {
-                    "AUTOLOOT concluído - retomando verde"
+            // O autoloot pode durar dezenas de segundos. Nunca retome a rota
+            // usando o bitmap e o relógio capturados antes da coleta.
+            val telaPosLoot = if (usaLoot) capturarQuadroFresco(tela) else tela
+            try {
+                val cruzPosLoot = acharCruz(telaPosLoot, x0, y0, x1, y1)
+                val centroXPosLoot = cruzPosLoot?.first?.toFloat() ?: cx
+                val centroYPosLoot = cruzPosLoot?.second?.toFloat() ?: cy
+                val verdePosLoot = if (veioDeCaminhando && refVerde != null) {
+                    modelos.getOrNull(alvo)?.let { modeloAtual ->
+                        acharPinoVerdeLocal(telaPosLoot, x0, y0, x1, y1, modeloAtual, refVerde)
+                    }
                 } else {
-                    "MONSTRO MORREU - retomando verde"
+                    null
                 }
-            }
 
-            fase = FaseNavegacao.ESCOLHER
-            retomarVerdeAte = 0L
-            verdeVeioDeTemplate = false
-            ultimoVerdeRel = null
-            ultimoQtdVerde = 0
-            ultimoRgbVerde = null
-            vistoVerde = false
+                if (verdePosLoot != null) {
+                    val posRel = verdePosLoot.posicao
+                    val distPosLoot = hypot(
+                        ((x0 + posRel.first) - centroXPosLoot).toDouble(),
+                        ((y0 + posRel.second) - centroYPosLoot).toDouble()
+                    ).toFloat()
+                    fase = FaseNavegacao.CAMINHANDO
+                    ultimoVerdeRel = posRel
+                    ultimoPosPinoConhecidaRel = posRel
+                    ultimoPosPinoEraVerde = true
+                    verdeVeioDeTemplate = false
+                    vistoVerde = true
+                    ultimoQtdVerde = verdePosLoot.quantidade
+                    ultimoRgbVerde = verdePosLoot.rgbMedio
+                    ultimaDistVerde = distPosLoot
+                    menorDistVerde = distPosLoot
+                    retomarVerdeAte = agoraPosLoot + 2000L
+                    iniciouCaminhadaEm = agoraPosLoot
+                    tempoMaxPinoMs = calcularTempoMaxPinoMs(
+                        if (distPosLoot > 0f) distPosLoot else pixelsPorCasa * 4f
+                    )
+                    return if (usaLoot) {
+                        "AUTOLOOT concluído - retomando verde atualizado"
+                    } else {
+                        "MONSTRO MORREU - retomando verde atualizado"
+                    }
+                }
 
-            return if (usaLoot) {
-                "AUTOLOOT concluído - procurando pino"
-            } else {
-                "MONSTRO MORREU - procurando pino"
+                fase = FaseNavegacao.ESCOLHER
+                retomarVerdeAte = 0L
+                verdeVeioDeTemplate = false
+                ultimoVerdeRel = null
+                ultimoQtdVerde = 0
+                ultimoRgbVerde = null
+                vistoVerde = false
+                falhasPino = 0
+
+                return if (usaLoot) {
+                    "AUTOLOOT concluído - procurando pino"
+                } else {
+                    "MONSTRO MORREU - procurando pino"
+                }
+            } finally {
+                if (telaPosLoot !== tela && !telaPosLoot.isRecycled) {
+                    telaPosLoot.recycle()
+                }
             }
         }
 
