@@ -348,6 +348,7 @@ object Rota {
         fimLutaEm = 0L
         versaoRegistradaNoLog = false
         presencaDesde = 0L
+        pausaManualDesde = 0L
         quadrosSemMonstroAlarme = 0
         estadoLogAlarme = 0
         ultimoLogAlarmeEm = 0L
