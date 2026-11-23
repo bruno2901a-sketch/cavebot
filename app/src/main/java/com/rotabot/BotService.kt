@@ -157,7 +157,17 @@ class BotService : Service() {
     private val ciclo = object : Runnable {
         override fun run() {
             if (!rodando) return
-            try { executarCiclo() } catch (e: Exception) { registrarStatus("Erro: ${e.javaClass.simpleName}") }
+            try {
+                executarCiclo()
+            } catch (e: OutOfMemoryError) {
+                android.util.Log.e("RotaBot", "Memória insuficiente durante o ciclo", e)
+                RelatorioErro.registrar(this@BotService, "OutOfMemoryError no ciclo", e)
+                handler.post { pararTudo("Memória insuficiente; rota encerrada para evitar travamento") }
+            } catch (e: Exception) {
+                android.util.Log.e("RotaBot", "Erro durante o ciclo", e)
+                RelatorioErro.registrar(this@BotService, "Erro durante o ciclo", e)
+                registrarStatus("Erro: ${e.javaClass.simpleName}")
+            }
             if (rodando) workerHandler.postDelayed(this, INTERVALO_CICLO_MS)
         }
     }
@@ -405,8 +415,14 @@ class BotService : Service() {
     }
 
     private fun tocarNaTela(x: Float, y: Float) {
-        if (soAlarme || pausaManual || encerramentoEmAndamento.get()) return
-        if (processando) return
+        if (soAlarme || pausaManual || encerramentoEmAndamento.get()) {
+            ultimoToque = "Toque bloqueado: rota em pausa ou modo somente alarme"
+            return
+        }
+        if (processando) {
+            ultimoToque = "Toque bloqueado: outro gesto ainda está sendo processado"
+            return
+        }
         processando = true
         toqueDesde = SystemClock.uptimeMillis()
         ultimoToque = ""
