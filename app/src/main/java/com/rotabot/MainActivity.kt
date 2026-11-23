@@ -53,9 +53,10 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         RelatorioErro.instalar(this)
+        val prefs = getSharedPreferences("rotabot_prefs", Context.MODE_PRIVATE)
+        uriSomSelecionado = prefs.getString("uri_som", uriSomSelecionado) ?: uriSomSelecionado
         if (savedInstanceState != null) {
-            resultadoCaptura = savedInstanceState.getInt("resultado", 0)
-            dadosCaptura = savedInstanceState.getParcelable("dados")
+            // Tokens MediaProjection são de uso único; não restaura após recriação.
             uriSomSelecionado = savedInstanceState.getString("uriSom", uriSomSelecionado)
         }
 
@@ -107,7 +108,7 @@ class MainActivity : ComponentActivity() {
                     putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "Selecione o som do alerta")
                     putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, Uri.parse(uriSomSelecionado))
                 }
-                startActivityForResult(intent, 99)
+                somLauncher.launch(intent)
             }
         }
 
@@ -127,10 +128,9 @@ class MainActivity : ComponentActivity() {
             text = "3) Autorizar captura da tela"
             setOnClickListener {
                 val manager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-                startActivityForResult(manager.createScreenCaptureIntent(), codigoCaptura)
+                capturaLauncher.launch(manager.createScreenCaptureIntent())
             }
         }
-        val prefs = getSharedPreferences("rotabot_prefs", Context.MODE_PRIVATE)
         val alarmeSalvo = prefs.getInt("tempo_alarme_s", 30).coerceIn(5, 300)
         val lootIntervaloSalvo = prefs.getInt("intervalo_loot_ms", 100).coerceIn(30, 500)
         val lootMaxSalvo = prefs.getInt("tempo_max_autoloot_s", 40).coerceIn(5, 120)
@@ -350,8 +350,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        outState.putInt("resultado", resultadoCaptura)
-        outState.putParcelable("dados", dadosCaptura)
         outState.putString("uriSom", uriSomSelecionado)
     }
 
