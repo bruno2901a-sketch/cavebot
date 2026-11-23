@@ -214,7 +214,7 @@ object LogRota {
         executor.execute {
             try {
                 val pastaFalhas = diretorioFalhas(ctx)
-                val slug = tagEvento.replace(Regex("[^a-zA-Z0-9]+"), "_")
+                val slug = tagEvento.replace(regexSlug, "_")
                 val nomeImg = "diag_${timestampArquivo}_${slug}.jpg"
                 val arqImg = File(pastaFalhas, nomeImg)
                 FileOutputStream(arqImg).use { out ->
