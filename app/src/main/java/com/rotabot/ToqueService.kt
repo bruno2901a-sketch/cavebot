@@ -3,6 +3,8 @@ package com.rotabot
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
+import android.os.Handler
+import android.os.Looper
 import android.util.DisplayMetrics
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
@@ -43,14 +45,20 @@ class ToqueService : AccessibilityService() {
                 return false
             }
             val callbackConcluido = AtomicBoolean(false)
+            val watchdogHandler = Handler(Looper.getMainLooper())
+            lateinit var watchdog: Runnable
             fun concluir(ok: Boolean, mensagem: String) {
                 if (callbackConcluido.compareAndSet(false, true)) {
+                    watchdogHandler.removeCallbacks(watchdog)
                     try {
                         callback?.invoke(ok, mensagem)
                     } finally {
                         gestoEmAndamento.set(false)
                     }
                 }
+            }
+            watchdog = Runnable {
+                concluir(false, "Android não confirmou o gesto em 10s; bloqueio de toque liberado")
             }
             return try {
                 val metrics = DisplayMetrics()
@@ -69,6 +77,7 @@ class ToqueService : AccessibilityService() {
                 val gesture = GestureDescription.Builder()
                     .addStroke(GestureDescription.StrokeDescription(path, 0L, duracaoMs.coerceAtLeast(1L)))
                     .build()
+                watchdogHandler.postDelayed(watchdog, 10000L)
                 val aceito = service.dispatchGesture(gesture, object : GestureResultCallback() {
                     override fun onCompleted(gestureDescription: GestureDescription?) {
                         concluir(true, "Gesto concluído em ${x.toInt()},${y.toInt()} (jogo não confirmado)")
