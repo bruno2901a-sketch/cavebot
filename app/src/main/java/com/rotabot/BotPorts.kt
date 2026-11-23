@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 /** Portas da camada de navegação para isolar Android e permitir testes. */
 interface Toucher {
     fun tocar(x: Float, y: Float, callback: ((Boolean, String) -> Unit)? = null): Boolean
+    fun tocarEAguardar(x: Float, y: Float, duracaoMs: Long = 50L, timeoutMs: Long = 2500L): Pair<Boolean, String>
 }
 
 interface ScreenSource {
@@ -31,6 +32,9 @@ class ProjectionScreenSource(
 object AccessibilityToucher : Toucher {
     override fun tocar(x: Float, y: Float, callback: ((Boolean, String) -> Unit)?): Boolean =
         ToqueService.clicar(x, y, callback = callback)
+
+    override fun tocarEAguardar(x: Float, y: Float, duracaoMs: Long, timeoutMs: Long): Pair<Boolean, String> =
+        ToqueService.clicarEAguardar(x, y, duracaoMs, timeoutMs)
 }
 
 object ServiceAlarmPlayer : AlarmPlayer {
