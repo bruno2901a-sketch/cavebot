@@ -5,10 +5,8 @@ package com.rotabot
  * A execução dos gestos permanece coordenada pela Rota.
  */
 object LootEngine {
-    private const val DURACAO_MINIMA_LUTA_MS = 2000L
-
     fun ignorarLutaCurta(duracaoLutaMs: Long): Boolean {
-        return duracaoLutaMs < DURACAO_MINIMA_LUTA_MS
+        return duracaoLutaMs < Cal.DURACAO_MINIMA_LUTA_MS
     }
 
     fun confirmarColeta(totalItensPegos: Int): Boolean {
