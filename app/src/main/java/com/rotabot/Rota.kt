@@ -1158,7 +1158,11 @@ object Rota {
             val inicioCorpoMs = SystemClock.uptimeMillis()
             val cruzAntes = obterCruzMinimapaSegura(tela)
 
-            ToqueService.clicar(cand.px, cand.py, 30L)
+            val gestoCorpo = ToqueService.clicarEAguardar(cand.px, cand.py, 30L)
+if (!gestoCorpo.first) {
+    LogRota.registrarPasso(context, "AUTOLOOT toque corpo falhou: " + gestoCorpo.second, tela)
+    continue
+}
             cliquesCount++
             if (!esperarFatiado(60L, inicioMs, context, tela, cliquesCount)) return
 
@@ -1278,7 +1282,11 @@ object Rota {
                 var pegouEste = false
                 for (tentativa in 1..Cal.MAX_TENTATIVAS_ITEM_LOOT) {
                     if (SystemClock.uptimeMillis() - inicioCorpoMs >= Cal.TEMPO_MAX_POR_CORPO_MS) break
-                    ToqueService.clicar(lx, ly, 30L)
+                    val gestoItem = ToqueService.clicarEAguardar(lx, ly, 30L)
+if (!gestoItem.first) {
+    LogRota.registrarPasso(context, "AUTOLOOT toque item falhou: " + gestoItem.second, tela)
+    break
+}
                     cliquesCount++
                     if (!esperarFatiado(intervaloLootMs, inicioMs, context, tela, cliquesCount)) return
 
@@ -1676,7 +1684,7 @@ object Rota {
             tela
         )
 
-        val temAlgoNovo = linhasNovo > 0
+        val temAlgoNovo = linhasNovo > 0 && temLegado
         if (temAlgoNovo) quadrosPresencaLutaSeguidos++ else quadrosPresencaLutaSeguidos = 0
         if (temAlgoNovo) {
             inicioAusenciaLutaMs = 0L
