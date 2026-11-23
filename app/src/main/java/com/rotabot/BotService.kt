@@ -457,11 +457,8 @@ class BotService : Service() {
         val agora = SystemClock.uptimeMillis()
         val frame = copiarImagemAtual()
         if (frame == null) {
-            // Uma tela estática pode não produzir imagem nova; não reinicia a projeção em loop.
-            if (!pausaManual && ultimoFrameEm > 0L && agora - ultimoFrameEm > 3000L) {
-                val segsSemImagem = (agora - ultimoFrameEm) / 1000L
-                registrarStatus("SEM IMAGEM há ${segsSemImagem}s - aguardando novo quadro")
-            }
+            // acquireLatestImage pode retornar null quando a tela não mudou.
+            // Aguarda o próximo quadro sem sinalizar falha nem reiniciar a projeção.
             return
         }
         ultimoFrameEm = agora
