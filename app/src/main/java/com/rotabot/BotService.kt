@@ -521,9 +521,7 @@ class BotService : Service() {
         ultimoToque = ""
         try {
             // Só devolve sucesso à rota depois de o Android confirmar o gesto.
-            val (concluido, mensagem) = ToqueService.clicarEAguardar(
-                x, y, duracaoMs = 50L, timeoutMs = 2500L
-            )
+            val (concluido, mensagem) = toucher.tocarEAguardar(x, y, duracaoMs = 50L, timeoutMs = 2500L)
             if (!concluido) {
                 ultimoToque = mensagem
                 throw ToqueNaoExecutadoException(mensagem)
