@@ -1,7 +1,5 @@
 package com.rotabot
 
-import android.graphics.Bitmap
-import kotlin.math.sqrt
 
 object MapaEngine {
     fun ehPixelVerde(p: Int): Boolean {
