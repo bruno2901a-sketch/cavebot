@@ -1147,7 +1147,7 @@ object Rota {
                 }
 
                 if (temMonstroQuadroFresco(tela)) {
-                    LogRota.registrarPasso(context, "AUTOLOOT interrompido: monstro apareceu", tela)
+                    registrarInterrupcaoMonstro()
                     return
                 }
 
@@ -1523,12 +1523,6 @@ if (!gestoItem.first) {
     private fun avaliarLutaComConfirmacao(tela: Bitmap, context: Context, agora: Long): Boolean {
         val linhasNovo = contarLinhasOcupadasBattle(tela)
         val temLegado = BatalhaEngine.temMonstroLegado(tela)
-        LogRota.registrarPasso(
-            context,
-            "BATALHA_DETECTOR novoLinhas=$linhasNovo legado=$temLegado",
-            tela
-        )
-
         val temAlgoNovo = BatalhaEngine.confirmarPresenca(linhasNovo, temLegado)
         if (temAlgoNovo) quadrosPresencaLutaSeguidos++ else quadrosPresencaLutaSeguidos = 0
         if (temAlgoNovo) {
@@ -1827,6 +1821,7 @@ if (!gestoItem.first) {
                     salvouQuadroInicioAlarmeLuta = true
                     val linhasAtuais = contarLinhasOcupadasBattle(tela)
                     LogRota.registrarPasso(context, "ALARME_INICIO linhasOcupadas=$linhasAtuais duracao=${segsLuta}s", tela)
+                    LogRota.registrarPasso(context, "luta excedeu limite duracao=${segsLuta}s", tela)
                     LogRota.salvarQuadroDiagnostico(context, "alarme_luta", tela)
                 }
                 BotService.tocarAlarme(context, uriSom, volume)
