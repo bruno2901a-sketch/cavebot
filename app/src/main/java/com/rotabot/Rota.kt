@@ -371,7 +371,7 @@ object Rota {
         ultimoBarraTituloAbs = null
         ultimoLogResumoEm = 0L
         melhorScore = 0.0
-        BotService.pararAlarme()
+        ServiceAlarmPlayer.parar()
     }
 
     private fun calcularTempoMaxPinoMs(distPx: Float): Long {
@@ -492,7 +492,7 @@ object Rota {
         fase = FaseNavegacao.ESCOLHER
         maquinaNavegacao.transition(NavigationState.Pausado("pino perdido: $pinoId"))
         if (context != null) {
-            if (alertaHabilitado) BotService.tocarAlarme(context, ultimoUriSom, ultimoVolume)
+            if (alertaHabilitado) ServiceAlarmPlayer.tocar(context, ultimoUriSom, ultimoVolume)
             LogRota.registrarPasso(context, "PAUSADO_POR_PINO_PERDIDO pino=$pinoId", tela)
         }
     }
@@ -1305,7 +1305,7 @@ if (!gestoItem.first) {
             val decorridoMs = agora - presencaDesde
             val segundos = decorridoMs / 1000L
             return if (decorridoMs >= limiteAlarmeMs) {
-                BotService.tocarAlarme(context, uriSom, volume)
+                ServiceAlarmPlayer.tocar(context, uriSom, volume)
                 val msg = "ALARME: batalha há ${segundos}s"
                 registrarLogMudancaAlarme(2, msg, agora, context, tela)
                 msg
@@ -1320,7 +1320,7 @@ if (!gestoItem.first) {
                 val decorridoAntes = if (presencaDesde > 0L) (agora - presencaDesde) / 1000L else 0L
                 val estavaEmAlarme = estadoLogAlarme == 2
                 presencaDesde = 0L
-                BotService.pararAlarme()
+                ServiceAlarmPlayer.parar()
                 if (estavaEmAlarme) {
                     registrarLogMudancaAlarme(0, "Alarme parou por falta de monstro (durou ${decorridoAntes}s)", agora, context, tela)
                 } else {
@@ -1805,7 +1805,7 @@ if (!gestoItem.first) {
                 val duracao = (agoraSemCruz - tempoInicioLuta).coerceAtLeast(0L)
                 val segundos = duracao / 1000L
                 if (usaAlerta && duracao >= limiteAlarmeMs) {
-                    BotService.tocarAlarme(context, uriSom, volume)
+                    ServiceAlarmPlayer.tocar(context, uriSom, volume)
                     if (estadoLogLutaAlarme != 1) {
                         estadoLogLutaAlarme = 1
                         LogRota.registrarPasso(context, "ALARME: batalha há " + segundos + "s (sem cruz)", tela)
@@ -1815,10 +1815,10 @@ if (!gestoItem.first) {
                 return "LUTA " + segundos + "s - sem cruz no minimapa"
             }
             if (estavaEmLuta) {
-                if (estadoLogLutaAlarme == 1) BotService.pararAlarme()
+                if (estadoLogLutaAlarme == 1) ServiceAlarmPlayer.parar()
                 return "BATALHA ENCERRADA - aguardando cruz para retomar"
             }
-            if (usaAlerta) BotService.pararAlarme()
+            if (usaAlerta) ServiceAlarmPlayer.parar()
             return "SEM CRUZ NO MINIMAPA (pausado)"
         }
 
@@ -1858,7 +1858,7 @@ if (!gestoItem.first) {
                     LogRota.registrarPasso(context, "luta excedeu limite duracao=${segsLuta}s", tela)
                     LogRota.salvarQuadroDiagnostico(context, "alarme_luta", tela)
                 }
-                BotService.tocarAlarme(context, uriSom, volume)
+                ServiceAlarmPlayer.tocar(context, uriSom, volume)
                 val msgAlarme = "ALARME: batalha há ${segsLuta}s"
                 if (estadoLogLutaAlarme != 1 && agora - ultimoLogLutaAlarmeEm >= 1000L) {
                     estadoLogLutaAlarme = 1
@@ -1872,7 +1872,7 @@ if (!gestoItem.first) {
         }
 
         if (!pausadoPorPinoPerdido) {
-            BotService.pararAlarme()
+            ServiceAlarmPlayer.parar()
         }
 
         if (estavaEmLuta) {
