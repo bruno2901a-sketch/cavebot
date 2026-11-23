@@ -15,7 +15,9 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.concurrent.Executors
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 object LogRota {
     private const val TAG = "LogRota"
@@ -24,7 +26,13 @@ object LogRota {
     private const val MAX_IMAGENS_FALHA = 30
     private const val MAX_IMAGENS_EXPORT = 10
 
-    private val executor = Executors.newSingleThreadExecutor()
+    // Fila limitada para impedir acumulo ilimitado de bitmaps quando o disco fica lento.
+    // CallerRunsPolicy aplica backpressure sem descartar a tarefa nem vazar a copia do quadro.
+    private val executor = ThreadPoolExecutor(
+        1, 1, 0L, TimeUnit.MILLISECONDS,
+        ArrayBlockingQueue<Runnable>(64),
+        ThreadPoolExecutor.CallerRunsPolicy()
+    )
     private val mainHandler = Handler(Looper.getMainLooper())
     private var appContext: Context? = null
     private var ultimaAssinatura: String? = null
