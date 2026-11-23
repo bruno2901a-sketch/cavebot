@@ -1043,13 +1043,20 @@ object Rota {
                 return
             }
 
-            if (temMonstroQuadroFresco(tela)) {
+            val monstroAntesDoCorpo = temMonstroQuadroFresco()
+            if (monstroAntesDoCorpo == null) {
+                LogRota.registrarPasso(context, "AUTOLOOT interrompido: captura indisponível", tela)
+                val durSeg = (SystemClock.uptimeMillis() - inicioMs) / 1000L
+                LogRota.registrarPasso(context, "AUTOLOOT fim ${durSeg}s cliques=$cliquesCount cancelado=sim", tela)
+                return
+            }
+            if (monstroAntesDoCorpo) {
                 registrarInterrupcaoMonstro()
                 return
             }
 
             val inicioCorpoMs = SystemClock.uptimeMillis()
-            val cruzAntes = obterCruzMinimapaFresca(tela)
+            val cruzAntes = obterCruzMinimapaFresca()
 
             // Um unico gesto por corpo evita double-tap ou comando de caminhada ate o corpo.
             val gestoCorpo = clicarLootComRetry(cand.px, cand.py)
