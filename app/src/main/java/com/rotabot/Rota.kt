@@ -3081,6 +3081,8 @@ if (!gestoItem.first) {
         var melhor = -2.0
         var bx = 0
         var by = 0
+        // Varredura grossa proporcional à resolução; depois refina em torno do melhor ponto.
+        val passoBusca = (4f * (tela.width / 2460f)).toInt().coerceIn(2, 6)
 
         var y = 0
         while (y <= rh - m.h) {
@@ -3092,16 +3094,16 @@ if (!gestoItem.first) {
                     bx = x
                     by = y
                 }
-                x += 2
+                x += passoBusca
             }
-            y += 2
+            y += passoBusca
         }
 
         val cx = bx
         val cy = by
 
-        for (dy in -1..1) {
-            for (dx in -1..1) {
+        for (dy in -passoBusca..passoBusca) {
+            for (dx in -passoBusca..passoBusca) {
                 val x = cx + dx
                 val yy = cy + dy
 
