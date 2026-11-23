@@ -800,8 +800,8 @@ object Rota {
                 escuros++
             }
         }
-        val razao = escuros.toFloat() / px.size.toFloat()
-        return razao >= 0.15f && acharBarraTituloLoot(quadro) != null
+        val barraTituloDetectada = acharBarraTituloLoot(quadro) != null
+        return LootEngine.confirmarJanelaLoot(escuros, px.size, barraTituloDetectada)
     }
 
     private fun acharBarraTituloLoot(quadro: Bitmap): Pair<Int, Int>? {
@@ -879,8 +879,7 @@ object Rota {
             }
         }
         val escala = quadro.width / 2460f
-        val minimoPixels = (10f * escala * escala).toInt().coerceAtLeast(2)
-        return naoFundo >= minimoPixels
+        return LootEngine.confirmarItem(naoFundo, escala)
     }
 
     private fun capturarQuadroFresco(): Bitmap? {
