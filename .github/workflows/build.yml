@@ -23,7 +23,7 @@ jobs:
           gradle-version: 8.7
 
       - name: Compilar
-        run: gradle assembleDebug --no-daemon
+        run: gradle testDebugUnitTest assembleDebug --no-daemon
 
       - name: Guardar APK como artefato
         uses: actions/upload-artifact@v4
