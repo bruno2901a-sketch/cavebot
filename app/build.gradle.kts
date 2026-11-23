@@ -11,8 +11,8 @@ android {
         applicationId = "com.rotabot"
         minSdk = 26
         targetSdk = 34
-        versionCode = 8
-        versionName = "1.9.0"
+        versionCode = 9
+        versionName = "1.9.1"
     }
 
     compileOptions {

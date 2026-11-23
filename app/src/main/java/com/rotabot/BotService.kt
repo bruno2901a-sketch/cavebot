@@ -156,11 +156,13 @@ class BotService : Service() {
             ACAO_INICIAR -> iniciar(intent)
             ACAO_PAUSAR -> {
                 pausaManual = true
+                EstadoBotController.definir(EstadoBot.PAUSADO)
                 Rota.cancelarAutoloot = true
             }
             ACAO_RETOMAR -> {
                 Rota.cancelarAutoloot = false
                 pausaManual = false
+                EstadoBotController.definir(if (rodando) EstadoBot.NAVEGANDO else EstadoBot.PRONTO)
                 Rota.retomarPausaPinoPerdido()
                 BotService.pararAlarme()
             }
@@ -207,6 +209,7 @@ class BotService : Service() {
     }
 
     private fun iniciar(intent: Intent) {
+        EstadoBotController.definir(EstadoBot.PREPARANDO)
         iniciarNotificacao()
         if (rodando) return
         inicio = intent.getIntExtra(EXTRA_INICIO, 1).coerceIn(1, Cal.TOTAL_ICONES)
@@ -247,7 +250,7 @@ class BotService : Service() {
             @Suppress("DEPRECATION")
             intent.getParcelableExtra<Intent>(EXTRA_DADOS)
         }
-        if (resultCode != Activity.RESULT_OK || data == null) { pararTudo("Erro auth"); return }
+        if (resultCode != Activity.RESULT_OK || data == null) { EstadoBotController.definir(EstadoBot.ERRO); pararTudo("Erro auth"); return }
 
         liberarCaptura()
         removerOverlay()
@@ -268,6 +271,7 @@ class BotService : Service() {
             Rota.carregar(this, inicio, fim, maxOf(metrics.widthPixels, metrics.heightPixels))
         } catch (e: Exception) {
             liberarCaptura()
+            EstadoBotController.definir(EstadoBot.ERRO)
             pararTudo("Falha ao carregar mapa: ${e.message ?: "erro desconhecido"}")
             return
         }
@@ -278,6 +282,7 @@ class BotService : Service() {
         ultimoToque = ""
         ultimoFrameEm = 0L
         ultimaRecriacaoCapturaEm = 0L
+        EstadoBotController.definir(EstadoBot.PRONTO)
         criarOverlay()
     }
 
@@ -314,6 +319,7 @@ class BotService : Service() {
             processando = false
             ultimoToque = "Gesto sem retorno após 8s; rota pausada por segurança"
             pausaManual = true
+            EstadoBotController.definir(EstadoBot.PAUSADO)
             Rota.cancelarAutoloot = true
             registrarStatus(ultimoToque)
             LogRota.registrarPasso(this, ultimoToque, ultimoFrameLog)
@@ -368,6 +374,7 @@ class BotService : Service() {
             } else {
                 Rota.passo(frame, this, usaLoot, usaAlerta, uriSomAlerta, volumeAlerta) { x, y -> tocarNaTela(x, y) }
             }
+            if (!pausaManual) EstadoBotController.definir(EstadoBot.NAVEGANDO)
             registrarStatus(if (ultimoToque.isEmpty()) resultado else "$resultado | $ultimoToque")
         } finally {
             frame.recycle()
@@ -487,6 +494,7 @@ class BotService : Service() {
                         rotaIniciada = true
                         rodando = true
                         pausaManual = false
+                        EstadoBotController.definir(EstadoBot.NAVEGANDO)
                         text = "Pausar"
                         atualizarContadoresOverlay()
                         workerHandler.post(ciclo)
@@ -495,9 +503,11 @@ class BotService : Service() {
                         if (novaPausa) {
                             Rota.cancelarAutoloot = true
                             pausaManual = true
+                            EstadoBotController.definir(EstadoBot.PAUSADO)
                         } else {
                             Rota.cancelarAutoloot = false
                             pausaManual = false
+                            EstadoBotController.definir(EstadoBot.NAVEGANDO)
                             Rota.retomarPausaPinoPerdido()
                             BotService.pararAlarme()
                         }
@@ -581,6 +591,7 @@ class BotService : Service() {
     }
 
     private fun pararTudo(motivo: String) {
+        EstadoBotController.definir(EstadoBot.ENCERRANDO)
         Rota.cancelarAutoloot = true
         rodando = false
         rotaIniciada = false
@@ -588,6 +599,7 @@ class BotService : Service() {
         removerOverlay()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
+        EstadoBotController.resetar()
     }
 
     private fun iniciarNotificacao() {
