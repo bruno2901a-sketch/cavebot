@@ -15,7 +15,9 @@ import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.concurrent.Executors
+import java.util.concurrent.ArrayBlockingQueue
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.TimeUnit
 
 object LogRota {
     private const val TAG = "LogRota"
@@ -24,11 +26,19 @@ object LogRota {
     private const val MAX_IMAGENS_FALHA = 30
     private const val MAX_IMAGENS_EXPORT = 10
 
-    private val executor = Executors.newSingleThreadExecutor()
+    // Fila limitada para impedir acumulo ilimitado de bitmaps quando o disco fica lento.
+    // CallerRunsPolicy aplica backpressure sem descartar a tarefa nem vazar a copia do quadro.
+    private val executor = ThreadPoolExecutor(
+        1, 1, 0L, TimeUnit.MILLISECONDS,
+        ArrayBlockingQueue<Runnable>(64),
+        ThreadPoolExecutor.CallerRunsPolicy()
+    )
     private val mainHandler = Handler(Looper.getMainLooper())
     private var appContext: Context? = null
     private var ultimaAssinatura: String? = null
     private var avisouErroGravacao = false
+
+    @Volatile var salvarPrints: Boolean = true
 
     fun init(context: Context) {
         appContext = context.applicationContext
@@ -70,14 +80,22 @@ object LogRota {
         }
     }
 
+    private val regexAcerto = Regex("acerto=\\d+[.,]\\d+")
+    private val regexDist = Regex("dist=(\\d+[.,]\\d+px|N/A)")
+    private val regexVerde = Regex("verde=-?\\d+")
+    private val regexRgb = Regex("rgb\\(\\d+,\\d+,\\d+\\)")
+    private val regexClique = Regex("CLIQUE \\d+,\\d+")
+    private val regexDiffMini = Regex("diffMini=\\d+[.,]\\d+")
+    private val regexSlug = Regex("[^a-zA-Z0-9]+")
+
     private fun normalizarAssinatura(msg: String): String {
         return msg
-            .replace(Regex("acerto=\\d+[.,]\\d+"), "acerto=#")
-            .replace(Regex("dist=(\\d+[.,]\\d+px|N/A)"), "dist=#")
-            .replace(Regex("verde=-?\\d+"), "verde=#")
-            .replace(Regex("rgb\\(\\d+,\\d+,\\d+\\)"), "rgb(#,#,#)")
-            .replace(Regex("CLIQUE \\d+,\\d+"), "CLIQUE #,#")
-            .replace(Regex("diffMini=\\d+[.,]\\d+"), "diffMini=#")
+            .replace(regexAcerto, "acerto=#")
+            .replace(regexDist, "dist=#")
+            .replace(regexVerde, "verde=#")
+            .replace(regexRgb, "rgb(#,#,#)")
+            .replace(regexClique, "CLIQUE #,#")
+            .replace(regexDiffMini, "diffMini=#")
     }
 
     private fun ehEventoObrigatorio(msg: String): Boolean {
@@ -86,13 +104,11 @@ object LogRota {
             msg.contains("PROXIMO_PINO") ||
             msg.contains("FALHA_PINO") ||
             msg.contains("RESUMO_CONTADORES") ||
-            msg.contains("nao ha rota") ||
             msg.contains("falhas=") ||
             msg.contains("sem progresso") ||
             msg.contains("verde sumiu") ||
             msg.contains("nao localizado") ||
             msg.contains("luta excedeu limite") ||
-            msg.contains("BATALHA_DETECTOR") ||
             msg.contains("BATALHA_INICIO") ||
             msg.contains("ALARME_INICIO") ||
             msg.contains("corpo ") ||
@@ -101,7 +117,6 @@ object LogRota {
 
     private fun motivoFalha(msg: String): String? {
         val motivos = listOf(
-            "nao ha rota",
             "sem progresso",
             "verde sumiu",
             "nao localizado",
@@ -143,7 +158,7 @@ object LogRota {
         ultimaAssinatura = assinatura
 
         val motivo = motivoFalha(mensagem)
-        val copiaTela = if (motivo != null && tela != null && !tela.isRecycled) {
+        val copiaTela = if (salvarPrints && motivo != null && tela != null && !tela.isRecycled) {
             try {
                 tela.copy(tela.config ?: Bitmap.Config.ARGB_8888, false)
             } catch (ex: Exception) {
@@ -154,7 +169,7 @@ object LogRota {
             null
         }
 
-        val timestampHora = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
+        val timestampHora = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.ROOT).format(Date())
         val timestampArquivo = SimpleDateFormat("HHmmss_SSS", Locale.getDefault()).format(Date())
 
         executor.execute {
@@ -166,7 +181,7 @@ object LogRota {
                 var nomeImagemSalva: String? = null
                 if (motivo != null && copiaTela != null && !copiaTela.isRecycled) {
                     val pastaFalhas = diretorioFalhas(ctx)
-                    val slugMotivo = motivo.replace(Regex("[^a-zA-Z0-9]+"), "_")
+                    val slugMotivo = motivo.replace(regexSlug, "_")
                     val nomeImg = "falha_${timestampArquivo}_${slugMotivo}.jpg"
                     val arqImg = File(pastaFalhas, nomeImg)
                     FileOutputStream(arqImg).use { out ->
@@ -194,7 +209,7 @@ object LogRota {
     }
 
     fun salvarQuadroDiagnostico(context: Context, tagEvento: String, tela: Bitmap?) {
-        if (tela == null || tela.isRecycled) return
+        if (!salvarPrints || tela == null || tela.isRecycled) return
         val ctx = context.applicationContext
         appContext = ctx
         val copia = try {
@@ -204,12 +219,12 @@ object LogRota {
             null
         } ?: return
 
-        val timestampHora = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
+        val timestampHora = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.ROOT).format(Date())
         val timestampArquivo = SimpleDateFormat("HHmmss_SSS", Locale.getDefault()).format(Date())
         executor.execute {
             try {
                 val pastaFalhas = diretorioFalhas(ctx)
-                val slug = tagEvento.replace(Regex("[^a-zA-Z0-9]+"), "_")
+                val slug = tagEvento.replace(regexSlug, "_")
                 val nomeImg = "diag_${timestampArquivo}_${slug}.jpg"
                 val arqImg = File(pastaFalhas, nomeImg)
                 FileOutputStream(arqImg).use { out ->
@@ -303,25 +318,25 @@ object LogRota {
         if (!linha.startsWith("[") || linha.length < 13) return null
         val fimIdx = linha.indexOf(']')
         if (fimIdx < 9) return null
-        val horaStr = linha.substring(1, fimIdx).trim()
-        val partes = horaStr.split(":")
-        if (partes.size != 3) return null
-        val h = partes[0].toIntOrNull() ?: return null
-        val m = partes[1].toIntOrNull() ?: return null
-        val secPartes = partes[2].split(".")
-        val s = secPartes[0].toIntOrNull() ?: return null
-        val ms = if (secPartes.size > 1) secPartes[1].padEnd(3, '0').take(3).toIntOrNull() ?: 0 else 0
-        if (h !in 0..23 || m !in 0..59 || s !in 0..59 || ms !in 0..999) return null
-        return ((h * 3600L + m * 60L + s) * 1000L) + ms
+        val valor = linha.substring(1, fimIdx).trim()
+        val formatoCompleto = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.ROOT)
+        formatoCompleto.isLenient = false
+        try {
+            formatoCompleto.parse(valor)?.let { return it.time }
+        } catch (_: Exception) {
+            // Tenta abaixo o formato antigo sem data.
+        }
+
+        // Compatibilidade com linhas antigas que guardavam somente a hora.
+        val dataHoje = SimpleDateFormat("yyyy-MM-dd", Locale.ROOT).format(Date())
+        val formatoAntigo = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.ROOT)
+        formatoAntigo.isLenient = false
+        return try { formatoAntigo.parse("$dataHoje $valor")?.time } catch (_: Exception) { null }
     }
 
     private fun dentroJanela15Min(msLinha: Long, msReferencia: Long): Boolean {
         val janelaMs = 15L * 60L * 1000L
-        val diaMs = 24L * 3600L * 1000L
-        var diff = msReferencia - msLinha
-        if (diff < 0L) {
-            diff += diaMs
-        }
+        val diff = msReferencia - msLinha
         return diff in 0L..janelaMs
     }
 
@@ -347,27 +362,8 @@ object LogRota {
                 return@execute
             }
 
-            // Passada 1: ler antigo e depois atual linha a linha, sem guardar linhas, guardando a hora (ms) da ultima linha valida
-            var msReferencia: Long? = null
-            for (arq in arquivosLog) {
-                try {
-                    arq.bufferedReader(Charsets.UTF_8).useLines { seq ->
-                        seq.forEach { linha ->
-                            val parsed = parsearHoraMs(linha)
-                            if (parsed != null) {
-                                msReferencia = parsed
-                            }
-                        }
-                    }
-                } catch (_: Exception) {}
-            }
-
-            if (msReferencia == null) {
-                val agoraFmt = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
-                msReferencia = parsearHoraMs("[$agoraFmt]") ?: 0L
-            }
-
-            val refMs = msReferencia!!
+            // A janela é calculada em relação ao relógio atual, não à última linha gravada.
+            val refMs = System.currentTimeMillis()
 
             try {
                 val arq15 = File(baseDir, "rotabot_log_ultimos15min.txt")

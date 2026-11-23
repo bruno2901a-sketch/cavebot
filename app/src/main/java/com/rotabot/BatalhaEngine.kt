@@ -7,6 +7,15 @@ import android.graphics.Bitmap
  * combinada em um módulo separado da máquina de navegação.
  */
 object BatalhaEngine {
+    fun ehCorHp(p: Int): Boolean {
+        val r = (p shr 16) and 0xFF
+        val g = (p shr 8) and 0xFF
+        val b = p and 0xFF
+        return (g >= 155 && r <= 85 && b <= 90) ||
+            (r >= 165 && g in 70..225 && b <= 85) ||
+            (r >= 155 && g <= 75 && b <= 75)
+    }
+
     fun temMonstroLegado(tela: Bitmap): Boolean {
         val x0 = (tela.width * Cal.BATALHA_X0)
             .toInt().coerceIn(0, tela.width - 1)
@@ -39,18 +48,14 @@ object BatalhaEngine {
             if (!ehFundoEscuro && (r > 95 || g > 105 || b > 125)) {
                 pixelsDestaque++
             }
-            val ehVerdeHp = g >= 155 && r <= 85 && b <= 90
-            val ehAmareloOuLaranjaHp = r >= 165 && g in 70..225 && b <= 85
-            val ehVermelhoHp = r >= 155 && g <= 75 && b <= 75
-            if (ehVerdeHp || ehAmareloOuLaranjaHp || ehVermelhoHp) {
-                pixelsBarraVida++
-            }
+            if (ehCorHp(p)) pixelsBarraVida++
         }
 
-        return pixelsBarraVida >= 8 && pixelsDestaque >= 220
+        val escala = (tela.width / 2460f).coerceIn(0.4f, 1.5f)
+        return pixelsBarraVida >= (8f * escala).toInt().coerceAtLeast(3) && pixelsDestaque >= (220f * escala * escala).toInt().coerceAtLeast(35)
     }
 
     fun confirmarPresenca(linhasOcupadas: Int, detectorLegado: Boolean): Boolean {
-        return linhasOcupadas > 0 && detectorLegado
+        return linhasOcupadas > 0 || detectorLegado
     }
 }

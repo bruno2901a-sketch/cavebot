@@ -3,6 +3,7 @@ package com.rotabot
 import android.app.Activity
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -12,6 +13,8 @@ import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
 import android.media.AudioAttributes
+import android.media.AudioManager
+import android.media.AudioFocusRequest
 import android.media.ImageReader
 import android.media.MediaPlayer
 import android.media.RingtoneManager
@@ -23,6 +26,7 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.os.SystemClock
 import android.util.DisplayMetrics
 import android.view.Gravity
@@ -33,7 +37,10 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
+import androidx.core.content.IntentCompat
 import java.util.concurrent.atomic.AtomicBoolean
+
+private class ToqueNaoExecutadoException(message: String) : RuntimeException(message)
 
 class BotService : Service() {
     companion object {
@@ -41,6 +48,8 @@ class BotService : Service() {
         const val ACAO_PAUSAR = "com.rotabot.PAUSAR"
         const val ACAO_RETOMAR = "com.rotabot.RETOMAR"
         const val ACAO_PARAR = "com.rotabot.PARAR"
+        const val ACAO_ALTERNAR_PAUSA = "com.rotabot.ALTERNAR_PAUSA"
+        const val EXTRA_CONFIG = "bot_config"
         const val EXTRA_INICIO = "inicio"
         const val EXTRA_FIM = "fim"
         const val EXTRA_RESULTADO = "resultado"
@@ -59,46 +68,98 @@ class BotService : Service() {
         const val EXTRA_LIMIAR_MINIMAPA_PARADO = "limiar_minimapa_parado"
         const val EXTRA_REF_BARRA_TITULO_X = "ref_barra_titulo_x"
         const val EXTRA_REF_BARRA_TITULO_Y = "ref_barra_titulo_y"
+        const val EXTRA_MODO_CIRCULAR = "modo_circular"
+        const val EXTRA_SALVAR_PRINTS = "salvar_prints"
 
         private const val CANAL = "rotabot_rota"
         private const val NOTIFICACAO_ID = 71
         private const val INTERVALO_CICLO_MS = 450L
 
-        private var mediaPlayer: MediaPlayer? = null
+        private val alarmeLock = Any()
+        @Volatile private var mediaPlayer: MediaPlayer? = null
+        private var audioManager: AudioManager? = null
+        private var audioFocusRequest: AudioFocusRequest? = null
+        private val audioFocusListener = AudioManager.OnAudioFocusChangeListener { }
 
         fun tocarAlarme(ctx: Context, uriStr: String, volumeProgresso: Int) {
-            try {
-                if (mediaPlayer == null) {
-                    val uri = if (uriStr.isNotEmpty() && uriStr != "alarme_pino") Uri.parse(uriStr) else RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-                    mediaPlayer = MediaPlayer().apply {
-                        setDataSource(ctx, uri)
-                        setAudioAttributes(
-                            AudioAttributes.Builder()
-                                .setUsage(AudioAttributes.USAGE_ALARM)
-                                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                                .build()
-                        )
-                        isLooping = true
-                        prepare()
+            synchronized(alarmeLock) {
+                try {
+                    if (mediaPlayer == null) {
+                        val uri = if (uriStr.isNotBlank() && uriStr != "alarme_pino") Uri.parse(uriStr)
+                            else RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                        if (uri == null) throw IllegalStateException("Som de alarme padrão indisponível")
+                        val manager = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+                        val attrs = AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_ALARM)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build()
+                        val focus = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                            .setAudioAttributes(attrs)
+                            .setOnAudioFocusChangeListener(audioFocusListener)
+                            .setAcceptsDelayedFocusGain(false)
+                            .build()
+                        if (manager.requestAudioFocus(focus) != AudioManager.AUDIOFOCUS_REQUEST_GRANTED) {
+                            throw IllegalStateException("Foco de áudio não concedido")
+                        }
+                        audioManager = manager
+                        audioFocusRequest = focus
+                        if (manager.getStreamVolume(AudioManager.STREAM_ALARM) == 0) {
+                            android.util.Log.w("RotaBot", "Volume do stream de alarme está em zero")
+                        }
+                        val novo = MediaPlayer()
+                        try {
+                            novo.setDataSource(ctx.applicationContext, uri)
+                            novo.setAudioAttributes(attrs)
+                            novo.isLooping = true
+                            novo.prepare()
+                            mediaPlayer = novo
+                        } catch (e: Exception) {
+                            novo.release()
+                            manager.abandonAudioFocusRequest(focus)
+                            audioManager = null
+                            audioFocusRequest = null
+                            throw e
+                        }
                     }
+                    val vol = volumeProgresso.coerceIn(0, 100) / 100f
+                    mediaPlayer?.setVolume(vol, vol)
+                    if (mediaPlayer?.isPlaying == false) mediaPlayer?.start()
+                } catch (e: Exception) {
+                    try { mediaPlayer?.release() } catch (_: Exception) {}
+                    mediaPlayer = null
+                    val manager = audioManager
+                    val focus = audioFocusRequest
+                    if (manager != null && focus != null) {
+                        try { manager.abandonAudioFocusRequest(focus) } catch (_: Exception) {}
+                    }
+                    audioManager = null
+                    audioFocusRequest = null
+                    android.util.Log.e("RotaBot", "Falha ao iniciar alarme", e)
+                    try { LogRota.registrarPasso(ctx, "ALARME_FALHA ${e.javaClass.simpleName}", null) } catch (_: Exception) {}
                 }
-                val vol = (volumeProgresso.coerceIn(0, 100) / 100f)
-                mediaPlayer?.setVolume(vol, vol)
-
-                if (mediaPlayer?.isPlaying == false) {
-                    mediaPlayer?.start()
-                }
-            } catch (_: Exception) {}
+            }
         }
 
         fun pararAlarme() {
-            try {
-                mediaPlayer?.let {
-                    if (it.isPlaying) it.stop()
-                    it.release()
+            synchronized(alarmeLock) {
+                try {
+                    mediaPlayer?.let {
+                        if (it.isPlaying) it.stop()
+                        it.release()
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.w("RotaBot", "Falha ao liberar alarme", e)
+                } finally {
+                    mediaPlayer = null
+                    val manager = audioManager
+                    val focus = audioFocusRequest
+                    if (manager != null && focus != null) {
+                        try { manager.abandonAudioFocusRequest(focus) } catch (_: Exception) {}
+                    }
+                    audioManager = null
+                    audioFocusRequest = null
                 }
-                mediaPlayer = null
-            } catch (_: Exception) {}
+            }
         }
     }
 
@@ -109,10 +170,13 @@ class BotService : Service() {
     private var virtualDisplay: VirtualDisplay? = null
     @Volatile private var imageReader: ImageReader? = null
     private val capturaLock = Any()
+    private val screenSource: ScreenSource by lazy { ProjectionScreenSource { copiarImagemAtual() } }
+    private val toucher: Toucher = AccessibilityToucher
     private val encerramentoEmAndamento = AtomicBoolean(false)
     private var overlay: LinearLayout? = null
     private var statusView: TextView? = null
     private var contadorView: TextView? = null
+    private var controleRotaView: Button? = null
     @Volatile private var alarmeSegAtual = 30
     @Volatile private var statusAtual = "Aguardando início"
     @Volatile private var rodando = false
@@ -121,8 +185,6 @@ class BotService : Service() {
     @Volatile private var processando = false
     @Volatile private var toqueDesde = 0L
     @Volatile private var ultimoToque = ""
-    @Volatile private var ultimoFrameEm = 0L
-    @Volatile private var ultimaRecriacaoCapturaEm = 0L
     private var ultimoFrameLog: Bitmap? = null
     private var inicio = 1
     private var fim = 5
@@ -130,16 +192,31 @@ class BotService : Service() {
     private var usaAlerta = true
     private var soAlarme = false
     private var volumeAlerta = 80
+    private var wakeLock: PowerManager.WakeLock? = null
     private var uriSomAlerta = ""
 
     private val projectionCallback = object : MediaProjection.Callback() {
-        override fun onStop() { pararTudo("Captura encerrada.") }
+        override fun onStop() { handler.post { pararTudo("Captura encerrada.") } }
     }
 
     private val ciclo = object : Runnable {
         override fun run() {
             if (!rodando) return
-            try { executarCiclo() } catch (e: Exception) { registrarStatus("Erro: ${e.javaClass.simpleName}") }
+            try {
+                executarCiclo()
+            } catch (e: ToqueNaoExecutadoException) {
+                ultimoToque = e.message ?: "Toque não executado"
+                registrarStatus("Toque não executado; repetindo a etapa")
+                LogRota.registrarPasso(this@BotService, ultimoToque, ultimoFrameLog)
+            } catch (e: OutOfMemoryError) {
+                android.util.Log.e("RotaBot", "Memória insuficiente durante o ciclo", e)
+                RelatorioErro.registrar(this@BotService, "OutOfMemoryError no ciclo", e)
+                handler.post { pararTudo("Memória insuficiente; rota encerrada para evitar travamento") }
+            } catch (e: Exception) {
+                android.util.Log.e("RotaBot", "Erro durante o ciclo", e)
+                RelatorioErro.registrar(this@BotService, "Erro durante o ciclo", e)
+                registrarStatus("Erro: ${e.javaClass.simpleName}")
+            }
             if (rodando) workerHandler.postDelayed(this, INTERVALO_CICLO_MS)
         }
     }
@@ -158,16 +235,35 @@ class BotService : Service() {
         when (intent?.action) {
             ACAO_INICIAR -> iniciar(intent)
             ACAO_PAUSAR -> {
+                Rota.iniciarPausaManual()
                 pausaManual = true
                 EstadoBotController.definir(EstadoBot.PAUSADO)
                 Rota.cancelarAutoloot = true
             }
             ACAO_RETOMAR -> {
+                Rota.compensarPausaManual()
                 Rota.cancelarAutoloot = false
                 pausaManual = false
                 EstadoBotController.definir(if (rodando) EstadoBot.NAVEGANDO else EstadoBot.PRONTO)
                 Rota.retomarPausaPinoPerdido()
                 BotService.pararAlarme()
+            }
+            ACAO_ALTERNAR_PAUSA -> {
+                if (pausaManual) {
+                    Rota.compensarPausaManual()
+                    Rota.cancelarAutoloot = false
+                    pausaManual = false
+                    EstadoBotController.definir(if (rodando) EstadoBot.NAVEGANDO else EstadoBot.PRONTO)
+                    Rota.retomarPausaPinoPerdido()
+                    pararAlarme()
+                } else {
+                    Rota.iniciarPausaManual()
+                    Rota.cancelarAutoloot = true
+                    pausaManual = true
+                    EstadoBotController.definir(EstadoBot.PAUSADO)
+                }
+                atualizarNotificacao()
+                registrarStatus(if (pausaManual) "Pausado" else "Retomado")
             }
             ACAO_PARAR -> {
                 Rota.cancelarAutoloot = true
@@ -200,31 +296,65 @@ class BotService : Service() {
         } catch (_: Exception) { null } finally { img.close() }
     }
 
-    private fun capturarQuadroSobDemanda(): Bitmap? = copiarImagemAtual()
+    private fun capturarQuadroSobDemanda(): Bitmap? = screenSource.capturar()
 
     private fun iniciar(intent: Intent) {
         if (rodando) return
         encerramentoEmAndamento.set(false)
         EstadoBotController.definir(EstadoBot.PREPARANDO)
+        ToqueService.limparPacoteAlvo()
         iniciarNotificacao()
+        try {
+            val power = getSystemService(Context.POWER_SERVICE) as PowerManager
+            wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "RotaBot:Execucao").apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("RotaBot", "Nao foi possivel adquirir WakeLock", e)
+        }
         if (rodando) return
-        inicio = intent.getIntExtra(EXTRA_INICIO, 1).coerceIn(1, Cal.TOTAL_ICONES)
-        fim = intent.getIntExtra(EXTRA_FIM, 5).coerceIn(inicio, Cal.TOTAL_ICONES)
-        usaLoot = intent.getBooleanExtra(EXTRA_USA_LOOT, false)
-        usaAlerta = intent.getBooleanExtra(EXTRA_USA_ALERTA, true)
-        soAlarme = intent.getBooleanExtra(EXTRA_SO_ALARME, false)
-        volumeAlerta = intent.getIntExtra(EXTRA_VOLUME, 80)
-        uriSomAlerta = intent.getStringExtra(EXTRA_URI_SOM) ?: ""
+        val configRecebida = IntentCompat.getParcelableExtra(intent, EXTRA_CONFIG, BotConfig::class.java)
+        val config = (configRecebida ?: BotConfig(
+            marcadorInicio = intent.getIntExtra(EXTRA_INICIO, 1),
+            marcadorFim = intent.getIntExtra(EXTRA_FIM, 5),
+            usaLoot = intent.getBooleanExtra(EXTRA_USA_LOOT, false),
+            usaAlerta = intent.getBooleanExtra(EXTRA_USA_ALERTA, true),
+            somenteAlarme = intent.getBooleanExtra(EXTRA_SO_ALARME, false),
+            modoCircular = intent.getBooleanExtra(EXTRA_MODO_CIRCULAR, false),
+            salvarPrints = intent.getBooleanExtra(EXTRA_SALVAR_PRINTS, true),
+            volumeAlerta = intent.getIntExtra(EXTRA_VOLUME, 80),
+            uriSomAlerta = intent.getStringExtra(EXTRA_URI_SOM) ?: "",
+            limiteAlarmeSegundos = intent.getIntExtra(EXTRA_ALARME_S, 30),
+            intervaloLootMs = intent.getIntExtra(EXTRA_LOOT_MS, 100),
+            maxAutolootSegundos = intent.getIntExtra(EXTRA_LOOT_MAX_S, 40),
+            intervaloPinoMs = intent.getIntExtra(EXTRA_PINO_MS, 700),
+            pixelsPorCasa = intent.getFloatExtra(EXTRA_PIXELS_POR_CASA, Cal.PIXELS_POR_CASA_PADRAO),
+            tamanhoCasaPx = intent.getFloatExtra(EXTRA_TAMANHO_CASA_PX, Cal.TAMANHO_CASA_PX_PADRAO),
+            limiarMinimapaParado = intent.getFloatExtra(EXTRA_LIMIAR_MINIMAPA_PARADO, Cal.LIMIAR_MINIMAPA_PARADO_PADRAO),
+            refBarraTituloX = intent.getFloatExtra(EXTRA_REF_BARRA_TITULO_X, Cal.REF_BARRA_TITULO_X_PADRAO),
+            refBarraTituloY = intent.getFloatExtra(EXTRA_REF_BARRA_TITULO_Y, Cal.REF_BARRA_TITULO_Y_PADRAO)
+        )).validado()
 
-        val alarmeS = intent.getIntExtra(EXTRA_ALARME_S, 30).coerceIn(5, 300)
-        val lootMs = intent.getIntExtra(EXTRA_LOOT_MS, 100).coerceIn(30, 500)
-        val lootMaxS = intent.getIntExtra(EXTRA_LOOT_MAX_S, 40).coerceIn(5, 120)
-        val pinoMs = intent.getIntExtra(EXTRA_PINO_MS, 700).coerceIn(300, 2000)
-        val pxPorCasa = intent.getFloatExtra(EXTRA_PIXELS_POR_CASA, Cal.PIXELS_POR_CASA_PADRAO).coerceIn(4f, 200f)
-        val tamCasaPx = intent.getFloatExtra(EXTRA_TAMANHO_CASA_PX, Cal.TAMANHO_CASA_PX_PADRAO).coerceIn(10f, 300f)
-        val limiarParado = intent.getFloatExtra(EXTRA_LIMIAR_MINIMAPA_PARADO, Cal.LIMIAR_MINIMAPA_PARADO_PADRAO).coerceIn(0.1f, 100f)
-        val refBarraX = intent.getFloatExtra(EXTRA_REF_BARRA_TITULO_X, Cal.REF_BARRA_TITULO_X_PADRAO).coerceIn(0f, 1f)
-        val refBarraY = intent.getFloatExtra(EXTRA_REF_BARRA_TITULO_Y, Cal.REF_BARRA_TITULO_Y_PADRAO).coerceIn(0f, 1f)
+        inicio = config.marcadorInicio
+        fim = config.marcadorFim
+        usaLoot = config.usaLoot
+        Rota.modoCircular = config.modoCircular
+        LogRota.salvarPrints = config.salvarPrints
+        usaAlerta = config.usaAlerta
+        soAlarme = config.somenteAlarme
+        volumeAlerta = config.volumeAlerta
+        uriSomAlerta = config.uriSomAlerta
+
+        val alarmeS = config.limiteAlarmeSegundos
+        val lootMs = config.intervaloLootMs
+        val lootMaxS = config.maxAutolootSegundos
+        val pinoMs = config.intervaloPinoMs
+        val pxPorCasa = config.pixelsPorCasa
+        val tamCasaPx = config.tamanhoCasaPx
+        val limiarParado = config.limiarMinimapaParado
+        val refBarraX = config.refBarraTituloX
+        val refBarraY = config.refBarraTituloY
 
         alarmeSegAtual = alarmeS
         Rota.limiteAlarmeMs = alarmeS * 1000L
@@ -255,15 +385,28 @@ class BotService : Service() {
         @Suppress("DEPRECATION")
         (getSystemService(WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealMetrics(metrics)
 
+        try {
+            val escalaResolucao = (maxOf(metrics.widthPixels, metrics.heightPixels) / 2460f).coerceIn(0.4f, 1.5f)
+        Rota.pixelsPorCasa = pxPorCasa * escalaResolucao
+        Rota.tamanhoCasaPx = tamCasaPx * escalaResolucao
+
         val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        projection = manager.getMediaProjection(resultCode, data)
-        projection?.registerCallback(projectionCallback, workerHandler)
-        synchronized(capturaLock) {
-            imageReader = ImageReader.newInstance(metrics.widthPixels, metrics.heightPixels, PixelFormat.RGBA_8888, 2)
-            virtualDisplay = projection?.createVirtualDisplay(
-                "RotaBotScreenCapture", metrics.widthPixels, metrics.heightPixels, metrics.densityDpi,
-                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, imageReader?.surface, null, workerHandler
-            )
+            projection = manager.getMediaProjection(resultCode, data)
+                ?: throw IllegalStateException("MediaProjection não foi criada")
+            projection?.registerCallback(projectionCallback, workerHandler)
+            synchronized(capturaLock) {
+                imageReader = ImageReader.newInstance(metrics.widthPixels, metrics.heightPixels, PixelFormat.RGBA_8888, 2)
+                virtualDisplay = projection?.createVirtualDisplay(
+                    "RotaBotScreenCapture", metrics.widthPixels, metrics.heightPixels, metrics.densityDpi,
+                    DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, imageReader?.surface, null, workerHandler
+                ) ?: throw IllegalStateException("VirtualDisplay não foi criado")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("RotaBot", "Falha ao iniciar MediaProjection", e)
+            RelatorioErro.registrar(this, "Falha ao iniciar MediaProjection", e)
+            EstadoBotController.definir(EstadoBot.ERRO)
+            pararTudo("Falha na captura: ${e.javaClass.simpleName}")
+            return
         }
         try {
             Rota.carregar(this, inicio, fim, maxOf(metrics.widthPixels, metrics.heightPixels))
@@ -278,8 +421,6 @@ class BotService : Service() {
         pausaManual = false
         processando = false
         ultimoToque = ""
-        ultimoFrameEm = 0L
-        ultimaRecriacaoCapturaEm = 0L
         EstadoBotController.definir(EstadoBot.PRONTO)
         criarOverlay()
     }
@@ -325,6 +466,8 @@ class BotService : Service() {
             if (pausaManual) return
             if (SystemClock.uptimeMillis() - toqueDesde < 8000L) return
             ultimoToque = "Gesto sem retorno após 8s; rota pausada. Aguardando Android liberar toque"
+            // Trata a pausa de segurança como pausa manual para congelar os temporizadores da rota.
+            Rota.iniciarPausaManual()
             pausaManual = true
             EstadoBotController.definir(EstadoBot.PAUSADO)
             Rota.cancelarAutoloot = true
@@ -333,32 +476,19 @@ class BotService : Service() {
             return
         }
         ajustarRotacao()
-        val agora = SystemClock.uptimeMillis()
         val frame = copiarImagemAtual()
         if (frame == null) {
-            if (!pausaManual && ultimoFrameEm > 0L && agora - ultimoFrameEm > 3000L) {
-                val segsSemImagem = (agora - ultimoFrameEm) / 1000L
-                registrarStatus("SEM IMAGEM há ${segsSemImagem}s - recriando captura")
-                if (agora - ultimaRecriacaoCapturaEm >= 5000L) {
-                    ultimaRecriacaoCapturaEm = agora
-                    val m = DisplayMetrics()
-                    @Suppress("DEPRECATION")
-                    (getSystemService(WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealMetrics(m)
-                    recriarLeitorCaptura(m)
-                    registrarLogCaptura("SEM IMAGEM há ${segsSemImagem}s - recriando captura (${m.widthPixels}x${m.heightPixels})")
-                }
-            }
+            // acquireLatestImage pode retornar null quando a tela não mudou.
+            // Aguarda o próximo quadro sem sinalizar falha nem reiniciar a projeção.
             return
         }
-        ultimoFrameEm = agora
 
 
         try {
-            val copiaLog = frame.copy(Bitmap.Config.ARGB_8888, false)
-            if (copiaLog != null) {
-                ultimoFrameLog?.recycle()
-                ultimoFrameLog = copiaLog
-            }
+            // Miniatura para logs; evita manter outra cópia integral de ~10 MB por ciclo.
+            val copiaLog = Bitmap.createScaledBitmap(frame, (frame.width / 4).coerceAtLeast(1), (frame.height / 4).coerceAtLeast(1), true)
+            ultimoFrameLog?.recycle()
+            ultimoFrameLog = copiaLog
         } catch (_: Exception) {}
 
         try {
@@ -378,38 +508,65 @@ class BotService : Service() {
     }
 
     private fun tocarNaTela(x: Float, y: Float) {
-        if (soAlarme || pausaManual || encerramentoEmAndamento.get()) return
-        if (processando) return
+        if (soAlarme || pausaManual || encerramentoEmAndamento.get()) {
+            ultimoToque = "Toque bloqueado: rota em pausa ou modo somente alarme"
+            throw ToqueNaoExecutadoException(ultimoToque)
+        }
+        if (processando) {
+            ultimoToque = "Toque bloqueado: outro gesto ainda está sendo processado"
+            throw ToqueNaoExecutadoException(ultimoToque)
+        }
         processando = true
         toqueDesde = SystemClock.uptimeMillis()
-        val aceito = ToqueService.clicar(x, y) { _, msg ->
-            ultimoToque = msg
+        ultimoToque = ""
+        try {
+            // Só devolve sucesso à rota depois de o Android confirmar o gesto.
+            val (concluido, mensagem) = toucher.tocarEAguardar(x, y, duracaoMs = 50L, timeoutMs = 2500L)
+            if (!concluido) {
+                ultimoToque = mensagem
+                throw ToqueNaoExecutadoException(mensagem)
+            }
+        } finally {
             processando = false
         }
-        if (!aceito) { processando = false }
     }
 
     private fun extrairNumeroPino(texto: String): String {
-        val match = Regex("pino=(\\d+)").find(texto)
-        if (match != null) return match.groupValues[1]
-        val matchPinoEspaco = Regex("\\bpino\\s+(\\d+)\\b", RegexOption.IGNORE_CASE).find(texto)
-        if (matchPinoEspaco != null) return matchPinoEspaco.groupValues[1]
-        return "?"
+        val lower = texto.lowercase()
+        val chave = lower.indexOf("pino=")
+        val inicio = if (chave >= 0) chave + 5 else {
+            val espaco = lower.indexOf("pino ")
+            if (espaco >= 0) espaco + 5 else return "?"
+        }
+        return texto.substring(inicio).takeWhile { it.isDigit() }.ifEmpty { "?" }
+    }
+
+    private fun extrairDuracao(texto: String): String? {
+        val lower = texto.lowercase()
+        val inicio = when {
+            lower.startsWith("luta ") -> 5
+            lower.contains("há ") -> lower.indexOf("há ") + 3
+            else -> return null
+        }
+        val numero = texto.substring(inicio).trimStart().takeWhile { it.isDigit() }
+        return numero.takeIf { it.isNotEmpty() }?.plus("s")
     }
 
     private fun statusCurto(texto: String): String {
         val limpa = texto.substringBefore(" | ").trim()
+        if (Rota.estaPausadoPorPinoPerdido() || texto.contains("PAUSADO_POR_PINO_PERDIDO", ignoreCase = true)) {
+            return "Pino perdido - bot pausado"
+        }
         if (limpa == "Pausado") return "Pausado"
         if (limpa.startsWith("RESYNC", ignoreCase = true)) return "Reajustando pino"
         if (limpa.startsWith("AUTOLOOT", ignoreCase = true)) return "Pegando loot"
         if (limpa.startsWith("ALARME", ignoreCase = true)) {
-            val segMatch = Regex("há\\s+(\\d+s)", RegexOption.IGNORE_CASE).find(limpa)
-            val segStr = segMatch?.groupValues?.get(1) ?: ""
+            val segStr = extrairDuracao(limpa) ?: ""
             return if (segStr.isNotEmpty()) "ALARME $segStr" else "ALARME"
         }
-        val lutaMatch = Regex("^LUTA\\s+(\\d+s)", RegexOption.IGNORE_CASE).find(limpa)
-        if (lutaMatch != null) {
-            return "Luta ${lutaMatch.groupValues[1]}"
+        val duracaoLuta = if (limpa.startsWith("LUTA", ignoreCase = true)) extrairDuracao(limpa) else null
+        if (duracaoLuta != null) {
+            return "Luta $duracaoLuta"
         }
         if (limpa.contains("nao localizado", ignoreCase = true)) {
             val p = extrairNumeroPino(texto)
@@ -441,10 +598,21 @@ class BotService : Service() {
 
     private fun registrarStatus(msg: String) {
         atualizarContadoresOverlay()
-        if (statusAtual == msg) return
-        statusAtual = msg
+        val mudou = statusAtual != msg
+        if (mudou) statusAtual = msg
         val curto = statusCurto(msg)
-        handler.post { statusView?.text = "✥ $curto" }
+        val pinoPerdido = Rota.estaPausadoPorPinoPerdido()
+        val estado = EstadoBotController.atual
+        handler.post {
+            if (mudou) statusView?.text = "✥ $curto"
+            controleRotaView?.text = when {
+                pinoPerdido -> "Retomar"
+                estado == EstadoBot.ENCERRANDO -> "Parando"
+                estado == EstadoBot.PARADO || estado == EstadoBot.ERRO -> "Iniciar"
+                estado == EstadoBot.PAUSADO -> "Retomar"
+                else -> "Pausar"
+            }
+        }
     }
 
     private fun criarOverlay() {
@@ -481,12 +649,20 @@ class BotService : Service() {
             val btnIniciarPausar = Button(this).apply {
                 text = "Iniciar"
                 setOnClickListener {
+                    if (Rota.estaPausadoPorPinoPerdido()) {
+                        Rota.compensarPausaManual()
+                        Rota.retomarPausaPinoPerdido()
+                        Rota.cancelarAutoloot = false
+                        pausaManual = false
+                        EstadoBotController.definir(EstadoBot.NAVEGANDO)
+                        BotService.pararAlarme()
+                        text = "Pausar"
+                        atualizarContadoresOverlay()
+                        return@setOnClickListener
+                    }
                     if (!rotaIniciada) {
                         Rota.resetar()
                         Rota.cancelarAutoloot = false
-                        val agoraInicio = SystemClock.uptimeMillis()
-                        ultimoFrameEm = agoraInicio
-                        ultimaRecriacaoCapturaEm = 0L
                         rotaIniciada = true
                         rodando = true
                         pausaManual = false
@@ -497,10 +673,12 @@ class BotService : Service() {
                     } else {
                         val novaPausa = !pausaManual
                         if (novaPausa) {
+                            Rota.iniciarPausaManual()
                             Rota.cancelarAutoloot = true
                             pausaManual = true
                             EstadoBotController.definir(EstadoBot.PAUSADO)
                         } else {
+                            Rota.compensarPausaManual()
                             Rota.cancelarAutoloot = false
                             pausaManual = false
                             EstadoBotController.definir(EstadoBot.NAVEGANDO)
@@ -512,6 +690,7 @@ class BotService : Service() {
                     }
                 }
             }
+            controleRotaView = btnIniciarPausar
             val btnParar = Button(this).apply {
                 text = "Parar"
                 setOnClickListener { pararTudo("Encerrado.") }
@@ -522,9 +701,9 @@ class BotService : Service() {
 
             val params = WindowManager.LayoutParams(
                 WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
-                if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                else WindowManager.LayoutParams.TYPE_PHONE,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT
+                WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_SECURE or WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
+                PixelFormat.TRANSLUCENT
             ).apply {
                 gravity = Gravity.TOP or Gravity.START
                 x = 320
@@ -581,11 +760,10 @@ class BotService : Service() {
             virtualDisplay = null
             try { imageReader?.close() } catch (_: Exception) {}
             imageReader = null
+            try { projection?.unregisterCallback(projectionCallback) } catch (_: Exception) {}
             try { projection?.stop() } catch (_: Exception) {}
             projection = null
         }
-        ultimoFrameLog?.recycle()
-        ultimoFrameLog = null
     }
 
     private fun pararTudo(motivo: String) {
@@ -598,22 +776,57 @@ class BotService : Service() {
         workerHandler.removeCallbacks(ciclo)
         liberarCaptura()
         removerOverlay()
+        try {
+            wakeLock?.let { if (it.isHeld) it.release() }
+        } catch (e: Exception) {
+            android.util.Log.w("RotaBot", "Falha ao liberar WakeLock", e)
+        } finally {
+            wakeLock = null
+        }
         registrarStatus(motivo)
+        // O worker pode ainda estar lendo a miniatura; libera tudo depois do ciclo atual.
+        workerHandler.post {
+            try {
+                ultimoFrameLog?.recycle()
+                ultimoFrameLog = null
+                Rota.limpar()
+            } catch (e: Exception) {
+                android.util.Log.e("RotaBot", "Falha ao limpar rota", e)
+                RelatorioErro.registrar(this, "Falha ao limpar rota", e)
+            }
+        }
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
-        EstadoBotController.resetar()
     }
 
     private fun iniciarNotificacao() {
-        if (Build.VERSION.SDK_INT >= 26) {
-            val channel = NotificationChannel(CANAL, "RotaBot", NotificationManager.IMPORTANCE_LOW)
-            (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(channel)
-        }
-        val notification = NotificationCompat.Builder(this, CANAL)
-            .setContentTitle("RotaBot Ativo")
-            .setSmallIcon(android.R.drawable.ic_menu_compass)
+        startForeground(NOTIFICACAO_ID, construirNotificacao())
+    }
+
+    private fun atualizarNotificacao() {
+        val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(NOTIFICACAO_ID, construirNotificacao())
+    }
+
+    private fun construirNotificacao(): android.app.Notification {
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        val abrirPending = PendingIntent.getActivity(this, 710, Intent(this, MainActivity::class.java), flags)
+        val alternar = Intent(this, BotService::class.java).setAction(ACAO_ALTERNAR_PAUSA)
+        val alternarPending = PendingIntent.getService(this, 711, alternar, flags)
+        val parar = Intent(this, BotService::class.java).setAction(ACAO_PARAR)
+        val pararPending = PendingIntent.getService(this, 712, parar, flags)
+        val acaoPausa = if (pausaManual) "Retomar" else "Pausar"
+        val iconePausa = if (pausaManual) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause
+        val texto = if (pausaManual) "Rota pausada" else "Rota em execução"
+        return NotificationCompat.Builder(this, CANAL)
+            .setContentTitle("RotaBot")
+            .setContentText(texto)
+            .setSmallIcon(R.drawable.ic_stat_rotabot)
+            .setContentIntent(abrirPending)
+            .setOngoing(true)
+            .addAction(iconePausa, acaoPausa, alternarPending)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Parar", pararPending)
             .build()
-        startForeground(NOTIFICACAO_ID, notification)
     }
 
     override fun onDestroy() {
@@ -621,6 +834,7 @@ class BotService : Service() {
         pararAlarme()
         pararTudo("Destruído.")
         workerThread.quitSafely()
+        EstadoBotController.resetar()
         super.onDestroy()
     }
 }

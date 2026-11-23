@@ -1,6 +1,10 @@
 package com.rotabot
 
-import android.app.Activity
+import androidx.activity.ComponentActivity
+import androidx.core.content.IntentCompat
+import android.Manifest
+import androidx.activity.result.contract.ActivityResultContracts
+import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.media.RingtoneManager
@@ -19,18 +23,52 @@ import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 
-class MainActivity : Activity() {
-    private val codigoCaptura = 42
+class MainActivity : ComponentActivity() {
     private var dadosCaptura: Intent? = null
     private var resultadoCaptura = 0
     private var uriSomSelecionado: String = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)?.toString() ?: ""
+    private var contadoresResumoView: TextView? = null
+
+    private val notificacaoLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { concedida ->
+        if (!concedida) {
+            Toast.makeText(this, "Notificações desativadas; o serviço continuará sem alertas na barra.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private val capturaLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { resultado ->
+        if (resultado.resultCode == RESULT_OK && resultado.data != null) {
+            resultadoCaptura = resultado.resultCode
+            dadosCaptura = resultado.data
+            Toast.makeText(this, "Captura autorizada. Toque em Iniciar.", Toast.LENGTH_SHORT).show()
+        } else {
+            resultadoCaptura = 0
+            dadosCaptura = null
+            Toast.makeText(this, "A captura é necessária.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private val somLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { resultado ->
+        if (resultado.resultCode == RESULT_OK && resultado.data != null) {
+            val uri = resultado.data?.let { IntentCompat.getParcelableExtra(it, RingtoneManager.EXTRA_RINGTONE_PICKED_URI, Uri::class.java) }
+            if (uri != null) {
+                uriSomSelecionado = uri.toString()
+                getSharedPreferences("rotabot_prefs", Context.MODE_PRIVATE).edit().putString("uri_som", uriSomSelecionado).apply()
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            notificacaoLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
         RelatorioErro.instalar(this)
+        val prefs = getSharedPreferences("rotabot_prefs", Context.MODE_PRIVATE)
+        uriSomSelecionado = prefs.getString("uri_som", uriSomSelecionado) ?: uriSomSelecionado
         if (savedInstanceState != null) {
-            resultadoCaptura = savedInstanceState.getInt("resultado", 0)
-            dadosCaptura = savedInstanceState.getParcelable("dados")
+            // Tokens MediaProjection são de uso único; não restaura após recriação.
             uriSomSelecionado = savedInstanceState.getString("uriSom", uriSomSelecionado)
         }
 
@@ -43,35 +81,45 @@ class MainActivity : Activity() {
             textSize = 14f
         }
         val inicio = EditText(this).apply {
-            hint = "Marcador inicial (1 a 20)"
-            setText("1")
+            hint = "Marcador inicial (1 a ${Cal.TOTAL_ICONES})"
+            setText(prefs.getInt("marcador_inicio", 1).coerceIn(1, Cal.TOTAL_ICONES).toString())
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
         }
         val fim = EditText(this).apply {
-            hint = "Marcador final (1 a 20)"
-            setText("5")
+            hint = "Marcador final (1 a ${Cal.TOTAL_ICONES})"
+            setText(prefs.getInt("marcador_fim", 5).coerceIn(1, Cal.TOTAL_ICONES).toString())
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
         }
 
         val checkLoot = CheckBox(this).apply {
             text = "Ativar Autoloot após matar monstro"
-            isChecked = false
+            isChecked = prefs.getBoolean("usa_loot", false)
         }
 
         val checkAlerta = CheckBox(this).apply {
-            text = "Ativar Alerta Sonoro (Batalha longa / Player)"
-            isChecked = true
+            text = "Ativar alerta sonoro de batalha prolongada"
+            isChecked = prefs.getBoolean("usa_alerta", true)
         }
 
         val checkSoAlarme = CheckBox(this).apply {
-            text = "Modo somente alarme (pesca): não anda e não clica; toca o alarme se algo ficar na Batalha pelo tempo do alarme (padrão 30s)"
-            isChecked = false
+            text = "Modo somente alarme (pesca): não anda e não clica; alerta após confirmar batalha"
+            isChecked = prefs.getBoolean("so_alarme", false)
+        }
+
+        val checkCircular = CheckBox(this).apply {
+            text = "Rota circular: do último pino volta ao primeiro"
+            isChecked = prefs.getBoolean("modo_circular", false)
+        }
+
+        val checkSalvarPrints = CheckBox(this).apply {
+            text = "Salvar prints de falhas e diagnóstico"
+            isChecked = prefs.getBoolean("salvar_prints", true)
         }
 
         val labelVolume = TextView(this).apply { text = "Volume do Alerta:" }
         val seekVolume = SeekBar(this).apply {
             max = 100
-            progress = 80
+            progress = prefs.getInt("volume_alerta", 80).coerceIn(0, 100)
         }
 
         val btnEscolherSom = Button(this).apply {
@@ -80,9 +128,9 @@ class MainActivity : Activity() {
                 val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
                     putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALL)
                     putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "Selecione o som do alerta")
-                    putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, Uri.parse(uriSomSelecionado))
+                    putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, uriSomSelecionado.takeIf { it.isNotBlank() }?.let(Uri::parse))
                 }
-                startActivityForResult(intent, 99)
+                somLauncher.launch(intent)
             }
         }
 
@@ -102,10 +150,9 @@ class MainActivity : Activity() {
             text = "3) Autorizar captura da tela"
             setOnClickListener {
                 val manager = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-                startActivityForResult(manager.createScreenCaptureIntent(), codigoCaptura)
+                capturaLauncher.launch(manager.createScreenCaptureIntent())
             }
         }
-        val prefs = getSharedPreferences("rotabot_prefs", Context.MODE_PRIVATE)
         val alarmeSalvo = prefs.getInt("tempo_alarme_s", 30).coerceIn(5, 300)
         val lootIntervaloSalvo = prefs.getInt("intervalo_loot_ms", 100).coerceIn(30, 500)
         val lootMaxSalvo = prefs.getInt("tempo_max_autoloot_s", 40).coerceIn(5, 120)
@@ -170,10 +217,11 @@ class MainActivity : Activity() {
             inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
         }
 
-        val contadoresResumoView = TextView(this).apply {
+        val contadoresResumo = TextView(this).apply {
             text = "Chegadas: ${Rota.chegadasConfirmadas} | Pulos: ${Rota.pulosPino}"
             textSize = 13f
         }
+        contadoresResumoView = contadoresResumo
 
         val containerAvancado = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -189,7 +237,7 @@ class MainActivity : Activity() {
         containerAvancado.addView(editIntervaloPino)
 
         val btnAvancado = Button(this).apply {
-            text = "Avançado"
+            text = "Avançado - calibração e temporização"
             setOnClickListener {
                 containerAvancado.visibility = if (containerAvancado.visibility == View.VISIBLE) View.GONE else View.VISIBLE
             }
@@ -200,8 +248,8 @@ class MainActivity : Activity() {
             setOnClickListener {
                 val a = inicio.text.toString().toIntOrNull()
                 val b = fim.text.toString().toIntOrNull()
-                if (a == null || b == null || a !in 1..20 || b !in 1..20 || a > b) {
-                    Toast.makeText(this@MainActivity, "Escolha marcadores válidos (1 a 20).", Toast.LENGTH_LONG).show()
+                if (a == null || b == null || a !in 1..Cal.TOTAL_ICONES || b !in 1..Cal.TOTAL_ICONES || a > b) {
+                    Toast.makeText(this@MainActivity, "Escolha marcadores válidos (1 a ${Cal.TOTAL_ICONES}).", Toast.LENGTH_LONG).show()
                     return@setOnClickListener
                 }
                 if (!Settings.canDrawOverlays(this@MainActivity)) {
@@ -230,6 +278,15 @@ class MainActivity : Activity() {
                 val refBarraY = (editRefBarraY.text.toString().replace(',', '.').toFloatOrNull() ?: Cal.REF_BARRA_TITULO_Y_PADRAO).coerceIn(0f, 1f)
 
                 prefs.edit()
+                    .putBoolean("usa_loot", checkLoot.isChecked)
+                    .putBoolean("usa_alerta", checkAlerta.isChecked)
+                    .putBoolean("so_alarme", checkSoAlarme.isChecked)
+                    .putBoolean("modo_circular", checkCircular.isChecked)
+                    .putBoolean("salvar_prints", checkSalvarPrints.isChecked)
+                    .putInt("volume_alerta", seekVolume.progress)
+                    .putString("uri_som", uriSomSelecionado)
+                    .putInt("marcador_inicio", a)
+                    .putInt("marcador_fim", b)
                     .putInt("tempo_alarme_s", alarmeS)
                     .putInt("intervalo_loot_ms", lootMs)
                     .putInt("tempo_max_autoloot_s", lootMaxS)
@@ -242,8 +299,29 @@ class MainActivity : Activity() {
                     .apply()
 
                 val usaAlertaFinal = if (modoSoAlarme) true else checkAlerta.isChecked
+                val config = BotConfig(
+                    marcadorInicio = a,
+                    marcadorFim = b,
+                    usaLoot = checkLoot.isChecked,
+                    usaAlerta = usaAlertaFinal,
+                    somenteAlarme = modoSoAlarme,
+                    modoCircular = checkCircular.isChecked,
+                    salvarPrints = checkSalvarPrints.isChecked,
+                    volumeAlerta = seekVolume.progress,
+                    uriSomAlerta = uriSomSelecionado,
+                    limiteAlarmeSegundos = alarmeS,
+                    intervaloLootMs = lootMs,
+                    maxAutolootSegundos = lootMaxS,
+                    intervaloPinoMs = pinoMs,
+                    pixelsPorCasa = pxPorCasa,
+                    tamanhoCasaPx = tamCasaPx,
+                    limiarMinimapaParado = limiarParado,
+                    refBarraTituloX = refBarraX,
+                    refBarraTituloY = refBarraY
+                ).validado()
                 val serviceIntent = Intent(this@MainActivity, BotService::class.java)
                     .setAction(BotService.ACAO_INICIAR)
+                    .putExtra(BotService.EXTRA_CONFIG, config)
                     .putExtra(BotService.EXTRA_INICIO, a)
                     .putExtra(BotService.EXTRA_FIM, b)
                     .putExtra(BotService.EXTRA_RESULTADO, resultadoCaptura)
@@ -251,6 +329,8 @@ class MainActivity : Activity() {
                     .putExtra(BotService.EXTRA_USA_LOOT, checkLoot.isChecked)
                     .putExtra(BotService.EXTRA_USA_ALERTA, usaAlertaFinal)
                     .putExtra(BotService.EXTRA_SO_ALARME, modoSoAlarme)
+                    .putExtra(BotService.EXTRA_MODO_CIRCULAR, checkCircular.isChecked)
+                    .putExtra(BotService.EXTRA_SALVAR_PRINTS, checkSalvarPrints.isChecked)
                     .putExtra(BotService.EXTRA_VOLUME, seekVolume.progress)
                     .putExtra(BotService.EXTRA_URI_SOM, uriSomSelecionado)
                     .putExtra(BotService.EXTRA_ALARME_S, alarmeS)
@@ -269,27 +349,29 @@ class MainActivity : Activity() {
         }
 
         tela.addView(titulo)
-        tela.addView(contadoresResumoView)
+        tela.addView(contadoresResumo)
         tela.addView(inicio)
         tela.addView(fim)
         tela.addView(checkLoot)
         tela.addView(checkAlerta)
         tela.addView(checkSoAlarme)
-        tela.addView(labelTempoAlarme)
-        tela.addView(editTempoAlarme)
-        tela.addView(labelIntervaloLoot)
-        tela.addView(editIntervaloLoot)
-        tela.addView(labelMaxAutoloot)
-        tela.addView(editMaxAutoloot)
-        tela.addView(labelPxPorCasa)
-        tela.addView(editPxPorCasa)
-        tela.addView(labelTamCasaPx)
-        tela.addView(editTamCasaPx)
-        tela.addView(labelLimiarParado)
-        tela.addView(editLimiarParado)
-        tela.addView(labelRefBarraTitulo)
-        tela.addView(editRefBarraX)
-        tela.addView(editRefBarraY)
+        tela.addView(checkCircular)
+        tela.addView(checkSalvarPrints)
+        containerAvancado.addView(labelTempoAlarme)
+        containerAvancado.addView(editTempoAlarme)
+        containerAvancado.addView(labelIntervaloLoot)
+        containerAvancado.addView(editIntervaloLoot)
+        containerAvancado.addView(labelMaxAutoloot)
+        containerAvancado.addView(editMaxAutoloot)
+        containerAvancado.addView(labelPxPorCasa)
+        containerAvancado.addView(editPxPorCasa)
+        containerAvancado.addView(labelTamCasaPx)
+        containerAvancado.addView(editTamCasaPx)
+        containerAvancado.addView(labelLimiarParado)
+        containerAvancado.addView(editLimiarParado)
+        containerAvancado.addView(labelRefBarraTitulo)
+        containerAvancado.addView(editRefBarraX)
+        containerAvancado.addView(editRefBarraY)
         tela.addView(btnAvancado)
         tela.addView(containerAvancado)
         tela.addView(labelVolume)
@@ -323,38 +405,22 @@ class MainActivity : Activity() {
         setContentView(rolagem)
     }
 
-    override fun onResume() {
-        super.onResume()
-        findViewById<View>(android.R.id.content)?.post {
-            // Atualiza contadores se visivel
-        }
-    }
-
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        outState.putInt("resultado", resultadoCaptura)
-        outState.putParcelable("dados", dadosCaptura)
         outState.putString("uriSom", uriSomSelecionado)
     }
 
-    @Deprecated("Deprecated in Android API")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == codigoCaptura) {
-            if (resultCode == RESULT_OK && data != null) {
-                resultadoCaptura = resultCode
-                dadosCaptura = data
-                Toast.makeText(this, "Captura autorizada. Toque em Iniciar.", Toast.LENGTH_SHORT).show()
-            } else {
-                dadosCaptura = null
-                Toast.makeText(this, "A captura é necessária.", Toast.LENGTH_LONG).show()
-            }
-        } else if (requestCode == 99 && resultCode == RESULT_OK && data != null) {
-            val uri = data.getParcelableExtra<Uri>(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
-            if (uri != null) {
-                uriSomSelecionado = uri.toString()
-                Toast.makeText(this, "Som do alarme alterado!", Toast.LENGTH_SHORT).show()
-            }
+    override fun onResume() {
+        super.onResume()
+        contadoresResumoView?.text = "Chegadas: " + Rota.chegadasConfirmadas + " | Pulos: " + Rota.pulosPino
+        val erroAnterior = RelatorioErro.ler(this)
+        if (!erroAnterior.isNullOrBlank()) {
+            AlertDialog.Builder(this)
+                .setTitle("Erro da execução anterior")
+                .setMessage(erroAnterior)
+                .setPositiveButton("Fechar") { _, _ -> RelatorioErro.limpar(this) }
+                .setCancelable(false)
+                .show()
         }
     }
 }

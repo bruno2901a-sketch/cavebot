@@ -3,6 +3,8 @@ package com.rotabot
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.GestureDescription
 import android.graphics.Path
+import android.os.Handler
+import android.os.Looper
 import android.util.DisplayMetrics
 import android.view.WindowManager
 import android.view.accessibility.AccessibilityEvent
@@ -14,9 +16,12 @@ class ToqueService : AccessibilityService() {
     companion object {
         @Volatile var instance: ToqueService? = null
             private set
+        @Volatile private var pacoteJogoAlvo: String? = null
+
+        fun limparPacoteAlvo() { pacoteJogoAlvo = null }
 
         // AccessibilityService cancels an active gesture when another is dispatched.
-        // Keep one gesture in flight at a time; a timeout does not release this guard.
+        // Keep one gesture in flight at a time; the watchdog releases a missing callback after 10s.
         private val gestoEmAndamento = AtomicBoolean(false)
         fun temGestoEmAndamento(): Boolean = gestoEmAndamento.get()
 
@@ -38,19 +43,37 @@ class ToqueService : AccessibilityService() {
 
         fun clicar(x: Float, y: Float, duracaoMs: Long = 50L, callback: ((Boolean, String) -> Unit)? = null): Boolean {
             val service = instance ?: run { callback?.invoke(false, "Acessibilidade desconectada"); return false }
+            val pacoteAtivo = try { service.rootInActiveWindow?.packageName?.toString() } catch (_: Exception) { null }
+            if (pacoteAtivo.isNullOrBlank() || pacoteAtivo == service.packageName) {
+                callback?.invoke(false, "Não foi possível confirmar o jogo em primeiro plano; toque bloqueado")
+                return false
+            }
+            val alvoAtual = pacoteJogoAlvo
+            if (alvoAtual == null) {
+                pacoteJogoAlvo = pacoteAtivo
+            } else if (alvoAtual != pacoteAtivo) {
+                callback?.invoke(false, "Jogo fora de primeiro plano; toque bloqueado")
+                return false
+            }
             if (!gestoEmAndamento.compareAndSet(false, true)) {
                 callback?.invoke(false, "Toque anterior ainda não foi concluído; novo toque bloqueado")
                 return false
             }
             val callbackConcluido = AtomicBoolean(false)
+            val watchdogHandler = Handler(Looper.getMainLooper())
+            lateinit var watchdog: Runnable
             fun concluir(ok: Boolean, mensagem: String) {
                 if (callbackConcluido.compareAndSet(false, true)) {
+                    watchdogHandler.removeCallbacks(watchdog)
                     try {
                         callback?.invoke(ok, mensagem)
                     } finally {
                         gestoEmAndamento.set(false)
                     }
                 }
+            }
+            watchdog = Runnable {
+                concluir(false, "Android não confirmou o gesto em 10s; bloqueio de toque liberado")
             }
             return try {
                 val metrics = DisplayMetrics()
@@ -69,9 +92,10 @@ class ToqueService : AccessibilityService() {
                 val gesture = GestureDescription.Builder()
                     .addStroke(GestureDescription.StrokeDescription(path, 0L, duracaoMs.coerceAtLeast(1L)))
                     .build()
+                watchdogHandler.postDelayed(watchdog, 10000L)
                 val aceito = service.dispatchGesture(gesture, object : GestureResultCallback() {
                     override fun onCompleted(gestureDescription: GestureDescription?) {
-                        concluir(true, "Gesto concluído em ${x.toInt()},${y.toInt()} (jogo não confirmado)")
+                        concluir(true, "Gesto concluído em ${x.toInt()},${y.toInt()} (pacote do jogo confirmado)")
                     }
                     override fun onCancelled(gestureDescription: GestureDescription?) {
                         concluir(false, "Android cancelou o toque em ${x.toInt()},${y.toInt()}")

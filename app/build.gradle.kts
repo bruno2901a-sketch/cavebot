@@ -1,6 +1,7 @@
 plugins {
-    id("com.android.application") version "8.5.2"
+    id("com.android.application") version "8.6.1"
     id("org.jetbrains.kotlin.android") version "1.9.24"
+    id("org.jetbrains.kotlin.plugin.parcelize") version "1.9.24"
 }
 
 android {
@@ -25,4 +26,6 @@ android {
 
 dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.activity:activity-ktx:1.9.0")
+    testImplementation("junit:junit:4.13.2")
 }
