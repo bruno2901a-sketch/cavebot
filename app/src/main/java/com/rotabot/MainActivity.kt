@@ -22,7 +22,6 @@ import android.widget.TextView
 import android.widget.Toast
 
 class MainActivity : ComponentActivity() {
-    private val codigoCaptura = 42
     private var dadosCaptura: Intent? = null
     private var resultadoCaptura = 0
     private var uriSomSelecionado: String = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)?.toString() ?: ""
@@ -69,35 +68,35 @@ class MainActivity : ComponentActivity() {
             textSize = 14f
         }
         val inicio = EditText(this).apply {
-            hint = "Marcador inicial (1 a 20)"
-            setText("1")
+            hint = "Marcador inicial (1 a ${Cal.TOTAL_ICONES})"
+            setText(prefs.getInt("marcador_inicio", 1).coerceIn(1, Cal.TOTAL_ICONES).toString())
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
         }
         val fim = EditText(this).apply {
-            hint = "Marcador final (1 a 20)"
-            setText("5")
+            hint = "Marcador final (1 a ${Cal.TOTAL_ICONES})"
+            setText(prefs.getInt("marcador_fim", 5).coerceIn(1, Cal.TOTAL_ICONES).toString())
             inputType = android.text.InputType.TYPE_CLASS_NUMBER
         }
 
         val checkLoot = CheckBox(this).apply {
             text = "Ativar Autoloot após matar monstro"
-            isChecked = false
+            isChecked = prefs.getBoolean("usa_loot", false)
         }
 
         val checkAlerta = CheckBox(this).apply {
-            text = "Ativar Alerta Sonoro (Batalha longa / Player)"
-            isChecked = true
+            text = "Ativar alerta sonoro de batalha prolongada"
+            isChecked = prefs.getBoolean("usa_alerta", true)
         }
 
         val checkSoAlarme = CheckBox(this).apply {
-            text = "Modo somente alarme (pesca): não anda e não clica; toca o alarme se algo ficar na Batalha pelo tempo do alarme (padrão 30s)"
-            isChecked = false
+            text = "Modo somente alarme (pesca): não anda e não clica; alerta após confirmar batalha"
+            isChecked = prefs.getBoolean("so_alarme", false)
         }
 
         val labelVolume = TextView(this).apply { text = "Volume do Alerta:" }
         val seekVolume = SeekBar(this).apply {
             max = 100
-            progress = 80
+            progress = prefs.getInt("volume_alerta", 80).coerceIn(0, 100)
         }
 
         val btnEscolherSom = Button(this).apply {
@@ -106,7 +105,7 @@ class MainActivity : ComponentActivity() {
                 val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
                     putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALL)
                     putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, "Selecione o som do alerta")
-                    putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, Uri.parse(uriSomSelecionado))
+                    putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, uriSomSelecionado.takeIf { it.isNotBlank() }?.let(Uri::parse))
                 }
                 somLauncher.launch(intent)
             }
@@ -195,7 +194,7 @@ class MainActivity : ComponentActivity() {
             inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_FLAG_DECIMAL
         }
 
-        val contadoresResumoView = TextView(this).apply {
+        contadoresResumoView = TextView(this).apply {
             text = "Chegadas: ${Rota.chegadasConfirmadas} | Pulos: ${Rota.pulosPino}"
             textSize = 13f
         }
@@ -225,7 +224,7 @@ class MainActivity : ComponentActivity() {
             setOnClickListener {
                 val a = inicio.text.toString().toIntOrNull()
                 val b = fim.text.toString().toIntOrNull()
-                if (a == null || b == null || a !in 1..20 || b !in 1..20 || a > b) {
+                if (a == null || b == null || a !in 1..Cal.TOTAL_ICONES || b !in 1..Cal.TOTAL_ICONES || a > b) {
                     Toast.makeText(this@MainActivity, "Escolha marcadores válidos (1 a 20).", Toast.LENGTH_LONG).show()
                     return@setOnClickListener
                 }
