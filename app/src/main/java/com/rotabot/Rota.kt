@@ -840,7 +840,7 @@ object Rota {
                     clarosNaLinha++
                 }
             }
-            if (clarosNaLinha >= (12f * (tela.width / 2460f)).toInt().coerceAtLeast(4)) {
+            if (clarosNaLinha >= (12f * (quadro.width / 2460f)).toInt().coerceAtLeast(4)) {
                 val distBase = hypot(((minX + rw / 2) - base.first).toDouble(), ((minY + yy) - base.second).toDouble())
                 val score = clarosNaLinha - (distBase * 0.25).toInt()
                 if (score > melhorPontuacao) {
@@ -1354,6 +1354,7 @@ if (!gestoItem.first) {
         val buscaY1 = (tela.height * 0.45f).toInt().coerceIn(buscaY0 + 10, tela.height)
         val bw = buscaX1 - buscaX0
         val bh = buscaY1 - buscaY0
+        val escalaBusca = (tela.width / 2460f).coerceIn(0.4f, 1.5f)
         if (bw > 16 && bh > 12) {
             val pxBusca = IntArray(bw * bh)
             tela.getPixels(pxBusca, 0, bw, buscaX0, buscaY0, bw, bh)
