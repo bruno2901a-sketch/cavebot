@@ -618,8 +618,6 @@ class BotService : Service() {
             try { projection?.stop() } catch (_: Exception) {}
             projection = null
         }
-        ultimoFrameLog?.recycle()
-        ultimoFrameLog = null
     }
 
     private fun pararTudo(motivo: String) {
@@ -633,6 +631,17 @@ class BotService : Service() {
         liberarCaptura()
         removerOverlay()
         registrarStatus(motivo)
+        // O worker pode ainda estar lendo a miniatura; libera tudo depois do ciclo atual.
+        workerHandler.post {
+            try {
+                ultimoFrameLog?.recycle()
+                ultimoFrameLog = null
+                Rota.limpar()
+            } catch (e: Exception) {
+                android.util.Log.e("RotaBot", "Falha ao limpar rota", e)
+                RelatorioErro.registrar(this, "Falha ao limpar rota", e)
+            }
+        }
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
         EstadoBotController.resetar()
