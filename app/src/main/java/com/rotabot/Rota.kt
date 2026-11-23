@@ -223,6 +223,7 @@ object Rota {
     private var fimLutaEm = 0L
     private var versaoRegistradaNoLog = false
     private var presencaDesde = 0L
+    private var pausaManualDesde = 0L
     private var quadrosSemMonstroAlarme = 0
     private var estadoLogAlarme = 0
     private var ultimoLogAlarmeEm = 0L
@@ -421,6 +422,27 @@ object Rota {
         val ctx = context ?: return
         val msg = "RESUMO_CONTADORES chegadas=$chegadasConfirmadas pulos=$pulosPino lutas=$lutas loots=$autoloots"
         LogRota.registrarPasso(ctx, msg, tela)
+    }
+
+    fun iniciarPausaManual() {
+        if (pausaManualDesde == 0L) {
+            pausaManualDesde = SystemClock.uptimeMillis()
+        }
+    }
+
+    fun compensarPausaManual() {
+        val inicio = pausaManualDesde
+        if (inicio <= 0L) return
+        val duracao = (SystemClock.uptimeMillis() - inicio).coerceAtLeast(0L)
+        if (duracao > 0L) {
+            if (tempoInicioLuta > 0L) tempoInicioLuta += duracao
+            if (presencaDesde > 0L) presencaDesde += duracao
+            if (iniciouCaminhadaEm > 0L) iniciouCaminhadaEm += duracao
+            if (retomarVerdeAte > 0L) retomarVerdeAte += duracao
+            if (pausadoAte > 0L) pausadoAte += duracao
+            if (fimLutaEm > 0L) fimLutaEm += duracao
+        }
+        pausaManualDesde = 0L
     }
 
     fun estaPausadoPorPinoPerdido(): Boolean = pausadoPorPinoPerdido
