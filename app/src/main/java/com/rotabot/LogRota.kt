@@ -77,17 +77,25 @@ object LogRota {
             .replace(Regex("verde=-?\\d+"), "verde=#")
             .replace(Regex("rgb\\(\\d+,\\d+,\\d+\\)"), "rgb(#,#,#)")
             .replace(Regex("CLIQUE \\d+,\\d+"), "CLIQUE #,#")
+            .replace(Regex("diffMini=\\d+[.,]\\d+"), "diffMini=#")
     }
 
     private fun ehEventoObrigatorio(msg: String): Boolean {
         return msg.contains("CLIQUE") ||
             msg.contains("CHEGOU") ||
+            msg.contains("PROXIMO_PINO") ||
+            msg.contains("FALHA_PINO") ||
+            msg.contains("RESUMO_CONTADORES") ||
             msg.contains("nao ha rota") ||
             msg.contains("falhas=") ||
             msg.contains("sem progresso") ||
             msg.contains("verde sumiu") ||
             msg.contains("nao localizado") ||
             msg.contains("luta excedeu limite") ||
+            msg.contains("BATALHA_DETECTOR") ||
+            msg.contains("BATALHA_INICIO") ||
+            msg.contains("ALARME_INICIO") ||
+            msg.contains("corpo ") ||
             msg.startsWith("AUTOLOOT")
     }
 
@@ -97,7 +105,8 @@ object LogRota {
             "sem progresso",
             "verde sumiu",
             "nao localizado",
-            "luta excedeu limite"
+            "luta excedeu limite",
+            "FALHA_PINO"
         )
         return motivos.firstOrNull { msg.contains(it, ignoreCase = true) }
     }
@@ -180,6 +189,45 @@ object LogRota {
                 copiaTela?.let {
                     if (!it.isRecycled) it.recycle()
                 }
+            }
+        }
+    }
+
+    fun salvarQuadroDiagnostico(context: Context, tagEvento: String, tela: Bitmap?) {
+        if (tela == null || tela.isRecycled) return
+        val ctx = context.applicationContext
+        appContext = ctx
+        val copia = try {
+            tela.copy(tela.config ?: Bitmap.Config.ARGB_8888, false)
+        } catch (ex: Exception) {
+            notificarErroUmaVez(ctx, "Falha ao copiar bitmap de diagnostico", ex)
+            null
+        } ?: return
+
+        val timestampHora = SimpleDateFormat("HH:mm:ss.SSS", Locale.getDefault()).format(Date())
+        val timestampArquivo = SimpleDateFormat("HHmmss_SSS", Locale.getDefault()).format(Date())
+        executor.execute {
+            try {
+                val pastaFalhas = diretorioFalhas(ctx)
+                val slug = tagEvento.replace(Regex("[^a-zA-Z0-9]+"), "_")
+                val nomeImg = "diag_${timestampArquivo}_${slug}.jpg"
+                val arqImg = File(pastaFalhas, nomeImg)
+                FileOutputStream(arqImg).use { out ->
+                    copia.compress(Bitmap.CompressFormat.JPEG, 80, out)
+                    out.flush()
+                }
+                limparArquivosAntigos(pastaFalhas, MAX_IMAGENS_FALHA)
+                val arquivo = File(diretorioBase(ctx), NOME_LOG)
+                rotacionarLogSeNecessario(arquivo)
+                val linha = "[$timestampHora] QUADRO_SALVO evento=$tagEvento | img=$nomeImg\n"
+                FileOutputStream(arquivo, true).use { out ->
+                    out.write(linha.toByteArray(Charsets.UTF_8))
+                    out.flush()
+                }
+            } catch (ex: Exception) {
+                notificarErroUmaVez(ctx, "Falha ao salvar quadro de diagnostico", ex)
+            } finally {
+                if (!copia.isRecycled) copia.recycle()
             }
         }
     }
