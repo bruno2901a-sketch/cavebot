@@ -113,6 +113,7 @@ class BotService : Service() {
     private var overlay: LinearLayout? = null
     private var statusView: TextView? = null
     private var contadorView: TextView? = null
+    private var controleRotaView: Button? = null
     @Volatile private var alarmeSegAtual = 30
     @Volatile private var statusAtual = "Aguardando início"
     @Volatile private var rodando = false
@@ -400,6 +401,7 @@ class BotService : Service() {
     private fun statusCurto(texto: String): String {
         val limpa = texto.substringBefore(" | ").trim()
         if (limpa == "Pausado") return "Pausado"
+        if (texto.contains("PAUSADO_POR_PINO_PERDIDO", ignoreCase = true)) return "Pino perdido - bot pausado"
         if (limpa.startsWith("RESYNC", ignoreCase = true)) return "Reajustando pino"
         if (limpa.startsWith("AUTOLOOT", ignoreCase = true)) return "Pegando loot"
         if (limpa.startsWith("ALARME", ignoreCase = true)) {
@@ -444,7 +446,16 @@ class BotService : Service() {
         if (statusAtual == msg) return
         statusAtual = msg
         val curto = statusCurto(msg)
-        handler.post { statusView?.text = "✥ $curto" }
+        val pinoPerdido = Rota.estaPausadoPorPinoPerdido()
+        handler.post {
+            statusView?.text = "✥ $curto"
+            controleRotaView?.text = when {
+                pinoPerdido -> "Retomar"
+                !rotaIniciada -> "Iniciar"
+                pausaManual -> "Retomar"
+                else -> "Pausar"
+            }
+        }
     }
 
     private fun criarOverlay() {
@@ -481,6 +492,16 @@ class BotService : Service() {
             val btnIniciarPausar = Button(this).apply {
                 text = "Iniciar"
                 setOnClickListener {
+                    if (Rota.estaPausadoPorPinoPerdido()) {
+                        Rota.retomarPausaPinoPerdido()
+                        Rota.cancelarAutoloot = false
+                        pausaManual = false
+                        EstadoBotController.definir(EstadoBot.NAVEGANDO)
+                        BotService.pararAlarme()
+                        text = "Pausar"
+                        atualizarContadoresOverlay()
+                        return@setOnClickListener
+                    }
                     if (!rotaIniciada) {
                         Rota.resetar()
                         Rota.cancelarAutoloot = false
@@ -512,6 +533,7 @@ class BotService : Service() {
                     }
                 }
             }
+            controleRotaView = btnIniciarPausar
             val btnParar = Button(this).apply {
                 text = "Parar"
                 setOnClickListener { pararTudo("Encerrado.") }
