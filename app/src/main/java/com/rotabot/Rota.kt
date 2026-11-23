@@ -93,14 +93,14 @@ private fun ehVerdePinoAtivo(p: Int): Boolean {
     val r = (p shr 16) and 0xFF
     val g = (p shr 8) and 0xFF
     val b = p and 0xFF
-    return g >= 170 && r < 90 && b < 90
+    return g >= Cal.VERDE_G_MIN && r <= Cal.VERDE_R_MAX && b <= Cal.VERDE_B_MAX
 }
 
 private fun ehPixelVerdeCaixa(p: Int): Boolean {
     val r = (p shr 16) and 0xFF
     val g = (p shr 8) and 0xFF
     val b = p and 0xFF
-    return g > 190 && r < 90 && b < 90
+    return ehVerdePinoAtivo(p)
 }
 
 object Rota {
@@ -1648,7 +1648,8 @@ if (!gestoItem.first) {
         val pinoId = modelo.indice
 
         if (nivelRecuperacaoPino == 0) {
-            val posReal = ultimoPosPinoConhecidaRel ?: acharPorTemplate(tela, x0, y0, x1, y1, modelo, cx, cy)?.let {
+            val buscaTemplate = buscarTemplateSemAlterarEstado(tela, x0, y0, x1, y1, modelo, cx, cy)
+            val posReal = ultimoPosPinoConhecidaRel ?: buscaTemplate.first?.let {
                 Pair((it.first - x0).coerceIn(0, rwSafe(x0, x1) - 1), (it.second - y0).coerceIn(0, rhSafe(y0, y1) - 1))
             }
             if (posReal != null) {
@@ -2291,6 +2292,29 @@ if (!gestoItem.first) {
     private fun minToqueY(tela: Bitmap): Float = 28f.coerceAtMost((tela.height - 1).toFloat())
     private fun maxToqueY(tela: Bitmap): Float = (tela.height - 28f).coerceAtLeast(minToqueY(tela))
 
+    private fun buscarTemplateSemAlterarEstado(
+        tela: Bitmap,
+        x0: Int,
+        y0: Int,
+        x1: Int,
+        y1: Int,
+        modelo: Modelo,
+        cx: Float,
+        cy: Float
+    ): Pair<Pair<Int, Int>?, Double> {
+        val melhorScoreAnterior = melhorScore
+        val ultimoCandidatoAnterior = ultimoCandidatoQuaseLimiar
+        val candidatoConsistenteAnterior = candidatoConsistente
+        return try {
+            val posicao = acharPorTemplate(tela, x0, y0, x1, y1, modelo, cx, cy)
+            Pair(posicao, melhorScore)
+        } finally {
+            melhorScore = melhorScoreAnterior
+            ultimoCandidatoQuaseLimiar = ultimoCandidatoAnterior
+            candidatoConsistente = candidatoConsistenteAnterior
+        }
+    }
+
     private fun tentarResyncPino(
         tela: Bitmap,
         x0: Int,
@@ -2324,8 +2348,9 @@ if (!gestoItem.first) {
 
         fun avaliarCandidato(idxCandidato: Int?): Pair<Boolean, Float>? {
             if (idxCandidato == null || idxCandidato !in modelos.indices) return null
-            val pos = acharPorTemplate(tela, x0, y0, x1, y1, modelos[idxCandidato], cx, cy) ?: return null
-            if (melhorScore < Cal.LIMIAR.toDouble()) return null
+            val busca = buscarTemplateSemAlterarEstado(tela, x0, y0, x1, y1, modelos[idxCandidato], cx, cy)
+            val pos = busca.first ?: return null
+            if (busca.second < Cal.LIMIAR.toDouble()) return null
             val dist = hypot((pos.first - cx).toDouble(), (pos.second - cy).toDouble()).toFloat()
             if (dist <= toleranciaChegada) return null
             return Pair(true, dist)
