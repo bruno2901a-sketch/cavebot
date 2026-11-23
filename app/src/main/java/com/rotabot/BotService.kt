@@ -37,6 +37,7 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
+import androidx.core.content.IntentCompat
 import java.util.concurrent.atomic.AtomicBoolean
 
 private class ToqueNaoExecutadoException(message: String) : RuntimeException(message)
@@ -48,6 +49,7 @@ class BotService : Service() {
         const val ACAO_RETOMAR = "com.rotabot.RETOMAR"
         const val ACAO_PARAR = "com.rotabot.PARAR"
         const val ACAO_ALTERNAR_PAUSA = "com.rotabot.ALTERNAR_PAUSA"
+        const val EXTRA_CONFIG = "bot_config"
         const val EXTRA_INICIO = "inicio"
         const val EXTRA_FIM = "fim"
         const val EXTRA_RESULTADO = "resultado"
@@ -310,25 +312,47 @@ class BotService : Service() {
             android.util.Log.e("RotaBot", "Nao foi possivel adquirir WakeLock", e)
         }
         if (rodando) return
-        inicio = intent.getIntExtra(EXTRA_INICIO, 1).coerceIn(1, Cal.TOTAL_ICONES)
-        fim = intent.getIntExtra(EXTRA_FIM, 5).coerceIn(inicio, Cal.TOTAL_ICONES)
-        usaLoot = intent.getBooleanExtra(EXTRA_USA_LOOT, false)
-        Rota.modoCircular = intent.getBooleanExtra(EXTRA_MODO_CIRCULAR, false)
-        LogRota.salvarPrints = intent.getBooleanExtra(EXTRA_SALVAR_PRINTS, true)
-        usaAlerta = intent.getBooleanExtra(EXTRA_USA_ALERTA, true)
-        soAlarme = intent.getBooleanExtra(EXTRA_SO_ALARME, false)
-        volumeAlerta = intent.getIntExtra(EXTRA_VOLUME, 80)
-        uriSomAlerta = intent.getStringExtra(EXTRA_URI_SOM) ?: ""
+        val configRecebida = IntentCompat.getParcelableExtra(intent, EXTRA_CONFIG, BotConfig::class.java)
+        val config = (configRecebida ?: BotConfig(
+            marcadorInicio = intent.getIntExtra(EXTRA_INICIO, 1),
+            marcadorFim = intent.getIntExtra(EXTRA_FIM, 5),
+            usaLoot = intent.getBooleanExtra(EXTRA_USA_LOOT, false),
+            usaAlerta = intent.getBooleanExtra(EXTRA_USA_ALERTA, true),
+            somenteAlarme = intent.getBooleanExtra(EXTRA_SO_ALARME, false),
+            modoCircular = intent.getBooleanExtra(EXTRA_MODO_CIRCULAR, false),
+            salvarPrints = intent.getBooleanExtra(EXTRA_SALVAR_PRINTS, true),
+            volumeAlerta = intent.getIntExtra(EXTRA_VOLUME, 80),
+            uriSomAlerta = intent.getStringExtra(EXTRA_URI_SOM) ?: "",
+            limiteAlarmeSegundos = intent.getIntExtra(EXTRA_ALARME_S, 30),
+            intervaloLootMs = intent.getIntExtra(EXTRA_LOOT_MS, 100),
+            maxAutolootSegundos = intent.getIntExtra(EXTRA_LOOT_MAX_S, 40),
+            intervaloPinoMs = intent.getIntExtra(EXTRA_PINO_MS, 700),
+            pixelsPorCasa = intent.getFloatExtra(EXTRA_PIXELS_POR_CASA, Cal.PIXELS_POR_CASA_PADRAO),
+            tamanhoCasaPx = intent.getFloatExtra(EXTRA_TAMANHO_CASA_PX, Cal.TAMANHO_CASA_PX_PADRAO),
+            limiarMinimapaParado = intent.getFloatExtra(EXTRA_LIMIAR_MINIMAPA_PARADO, Cal.LIMIAR_MINIMAPA_PARADO_PADRAO),
+            refBarraTituloX = intent.getFloatExtra(EXTRA_REF_BARRA_TITULO_X, Cal.REF_BARRA_TITULO_X_PADRAO),
+            refBarraTituloY = intent.getFloatExtra(EXTRA_REF_BARRA_TITULO_Y, Cal.REF_BARRA_TITULO_Y_PADRAO)
+        )).validado()
 
-        val alarmeS = intent.getIntExtra(EXTRA_ALARME_S, 30).coerceIn(5, 300)
-        val lootMs = intent.getIntExtra(EXTRA_LOOT_MS, 100).coerceIn(30, 500)
-        val lootMaxS = intent.getIntExtra(EXTRA_LOOT_MAX_S, 40).coerceIn(5, 120)
-        val pinoMs = intent.getIntExtra(EXTRA_PINO_MS, 700).coerceIn(300, 2000)
-        val pxPorCasa = intent.getFloatExtra(EXTRA_PIXELS_POR_CASA, Cal.PIXELS_POR_CASA_PADRAO).coerceIn(4f, 200f)
-        val tamCasaPx = intent.getFloatExtra(EXTRA_TAMANHO_CASA_PX, Cal.TAMANHO_CASA_PX_PADRAO).coerceIn(10f, 300f)
-        val limiarParado = intent.getFloatExtra(EXTRA_LIMIAR_MINIMAPA_PARADO, Cal.LIMIAR_MINIMAPA_PARADO_PADRAO).coerceIn(0.1f, 100f)
-        val refBarraX = intent.getFloatExtra(EXTRA_REF_BARRA_TITULO_X, Cal.REF_BARRA_TITULO_X_PADRAO).coerceIn(0f, 1f)
-        val refBarraY = intent.getFloatExtra(EXTRA_REF_BARRA_TITULO_Y, Cal.REF_BARRA_TITULO_Y_PADRAO).coerceIn(0f, 1f)
+        inicio = config.marcadorInicio
+        fim = config.marcadorFim
+        usaLoot = config.usaLoot
+        Rota.modoCircular = config.modoCircular
+        LogRota.salvarPrints = config.salvarPrints
+        usaAlerta = config.usaAlerta
+        soAlarme = config.somenteAlarme
+        volumeAlerta = config.volumeAlerta
+        uriSomAlerta = config.uriSomAlerta
+
+        val alarmeS = config.limiteAlarmeSegundos
+        val lootMs = config.intervaloLootMs
+        val lootMaxS = config.maxAutolootSegundos
+        val pinoMs = config.intervaloPinoMs
+        val pxPorCasa = config.pixelsPorCasa
+        val tamCasaPx = config.tamanhoCasaPx
+        val limiarParado = config.limiarMinimapaParado
+        val refBarraX = config.refBarraTituloX
+        val refBarraY = config.refBarraTituloY
 
         alarmeSegAtual = alarmeS
         Rota.limiteAlarmeMs = alarmeS * 1000L
