@@ -152,6 +152,7 @@ object Rota {
     private var tempoMaxPinoMs = 15000L
     private var pausadoAte = 0L
     private var pausadoPorPinoPerdido = false
+    private var alertaHabilitado = true
     private var ultimoUriSom = ""
     private var ultimoVolume = 80
     private val estadoPino = EstadoPino()
@@ -467,7 +468,7 @@ object Rota {
         pausadoAte = Long.MAX_VALUE
         fase = FaseNavegacao.ESCOLHER
         if (context != null) {
-            BotService.tocarAlarme(context, ultimoUriSom, ultimoVolume)
+            if (alertaHabilitado) BotService.tocarAlarme(context, ultimoUriSom, ultimoVolume)
             LogRota.registrarPasso(context, "PAUSADO_POR_PINO_PERDIDO pino=$pinoId", tela)
         }
     }
@@ -489,9 +490,8 @@ object Rota {
             val idAntes = if (alvo in modelos.indices) modelos[alvo].indice else alvo
             voltarPinoAnteriorRespeitandoDirecao()
             val idDepois = if (alvo in modelos.indices) modelos[alvo].indice else alvo
-            pulosPino++
             if (context != null) {
-                LogRota.registrarPasso(context, "VOLTOU_PINO de=$idAntes para=$idDepois", tela)
+                LogRota.registrarPasso(context, "RECUPERACAO_VOLTOU_PINO de=$idAntes para=$idDepois", tela)
             }
             fase = FaseNavegacao.ESCOLHER
             iniciouCaminhadaEm = 0L
@@ -611,7 +611,7 @@ object Rota {
         if (falhasPino >= Cal.MAX_FALHAS_PINO) {
             val logAvanco = formatarLog(
                 faseNome, pinoId, score, qtdVerde, rgbVerde, distPx, progressoAntesReset,
-                "$motivo (falhas=$falhasPino -> proximo pino)"
+                "$motivo (falhas=$falhasPino -> recuperacao/pausa)"
             )
             tratarEsgotamentoPinoSemPulo(agora, pinoId, context, tela)
             return logAvanco
@@ -1731,6 +1731,7 @@ if (!gestoItem.first) {
         volume: Int,
         tocar: (Float, Float) -> Unit
     ): String {
+        alertaHabilitado = usaAlerta
         if (tela.height > tela.width) {
             return "CELULAR EM RETRATO (pausado)"
         }
@@ -2174,7 +2175,7 @@ if (!gestoItem.first) {
         if (achado == null) {
             quadrosPertoDaCruz = 0
             val candidatoPos = candidatoConsistente
-            if (scoreAtual >= 0.48 && candidatoPos != null) {
+            if (scoreAtual >= 0.90 && candidatoPos != null) {
                 quadrosQuaseLimiar++
             } else {
                 quadrosQuaseLimiar = 0
