@@ -1565,7 +1565,7 @@ if (!gestoItem.first) {
             if (inicioPresencaLutaMs == 0L) {
                 inicioPresencaLutaMs = agora
             }
-            if (!lutaConfirmadaAtiva && quadrosPresencaLutaSeguidos >= 2 && (agora - inicioPresencaLutaMs) >= 150L) {
+            if (!lutaConfirmadaAtiva && quadrosPresencaLutaSeguidos >= 3 && (agora - inicioPresencaLutaMs) >= 300L) {
                 lutaConfirmadaAtiva = true
                 prepararCapturaCasasAntesLuta(tela)
                 LogRota.registrarPasso(context, "BATALHA_INICIO linhasOcupadas=$linhasNovo", tela)
@@ -1580,7 +1580,7 @@ if (!gestoItem.first) {
                 if (inicioAusenciaLutaMs == 0L) {
                     inicioAusenciaLutaMs = agora
                 }
-                if ((agora - inicioAusenciaLutaMs) >= 300L) {
+                if ((agora - inicioAusenciaLutaMs) >= 600L) {
                     lutaConfirmadaAtiva = false
                     inicioAusenciaLutaMs = 0L
                     salvouQuadroInicioLuta = false
