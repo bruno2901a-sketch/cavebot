@@ -11,10 +11,8 @@ object Cal {
     const val VERDE_G_MIN = 170
     const val VERDE_R_MAX = 89
     const val VERDE_B_MAX = 89
-    const val CHEGOU_FRAC = 0.018f
     const val TOLERANCIA_CHEGADA_CASAS = 1.5f
     const val PERMITIR_PULO = false
-    const val INTERVALO_CLIQUE = 700L
     const val TOTAL_ICONES = 20
     const val MINIMAPA_X0 = 0.848f
     const val MINIMAPA_Y0 = 0.135f
@@ -25,7 +23,6 @@ object Cal {
     const val BATALHA_X1 = 0.181f
     const val BATALHA_Y1 = 0.392f
     const val MAX_FALHAS_PINO = 3
-    const val IGNORAR_LUTA_MS = 4000L
     const val NAO_VISTO_LIMITE = 24
     const val PIXELS_POR_CASA_PADRAO = 16.0f
     const val TAMANHO_CASA_PX_PADRAO = 88.0f
