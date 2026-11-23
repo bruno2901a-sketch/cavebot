@@ -96,12 +96,7 @@ private fun ehVerdePinoAtivo(p: Int): Boolean {
     return g >= Cal.VERDE_G_MIN && r <= Cal.VERDE_R_MAX && b <= Cal.VERDE_B_MAX
 }
 
-private fun ehPixelVerdeCaixa(p: Int): Boolean {
-    val r = (p shr 16) and 0xFF
-    val g = (p shr 8) and 0xFF
-    val b = p and 0xFF
-    return ehVerdePinoAtivo(p)
-}
+private fun ehPixelVerdeCaixa(p: Int): Boolean = ehVerdePinoAtivo(p)
 
 object Rota {
     @Volatile
