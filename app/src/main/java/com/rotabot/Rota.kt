@@ -194,8 +194,6 @@ object Rota {
     private var candidatoConsistente: Pair<Int, Int>?
         get() = estadoPino.candidatoConsistente
         set(v) { estadoPino.candidatoConsistente = v }
-    private var quadrosSemRota = 0
-    private var ignorarSemRotaAte = 0L
     private var quadrosMonstro = 0
     private var ignorarLutaAte = 0L
     private var estavaEmLuta = false
@@ -249,9 +247,7 @@ object Rota {
     private var ultimoPosPinoEraVerde: Boolean
         get() = estadoPino.ultimoPosPinoEraVerde
         set(v) { estadoPino.ultimoPosPinoEraVerde = v }
-    private var quadrosSemRotaSeguidos = 0
     private var quadrosPresencaLutaSeguidos = 0
-    private var pontoOpcionalMensagemSemRota: Pair<Float, Float>? = null
 
     private var battleAncoraX: Int = -1
     private var battleAncoraY: Int = -1
@@ -271,10 +267,6 @@ object Rota {
 
     @Volatile
     private var melhorScore = 0.0
-
-    fun configurarPontoOpcionalSemRota(ponto: Pair<Float, Float>?) {
-        pontoOpcionalMensagemSemRota = ponto
-    }
 
     fun carregar(ctx: Context, inicio: Int, fim: Int, larguraTela: Int) {
         val catalogo = CatalogoPinos.validar(ctx, inicio, fim)
@@ -344,8 +336,6 @@ object Rota {
         pausadoAte = 0L
         pausadoPorPinoPerdido = false
         estadoPino.reiniciar(preservarFalhas = false)
-        quadrosSemRota = 0
-        ignorarSemRotaAte = 0L
         quadrosMonstro = 0
         ignorarLutaAte = 0L
         estavaEmLuta = false
@@ -373,7 +363,6 @@ object Rota {
         ultimoRecorteMinimapaH = 0
         minimapaParadoDesde = 0L
         ultimaDiffMinimapa = 0.0
-        quadrosSemRotaSeguidos = 0
         inicioPresencaLutaMs = 0L
         inicioAusenciaLutaMs = 0L
         quadrosPresencaLutaSeguidos = 0
@@ -579,9 +568,6 @@ object Rota {
         val manterVoltou = motivoAvanco != "CHEGADA_CONFIRMADA" && estadoPino.voltouAoPinoAnteriorParaTentar
         estadoPino.reiniciar(preservarFalhas = false)
         if (manterVoltou) estadoPino.voltouAoPinoAnteriorParaTentar = true
-        quadrosSemRota = 0
-        quadrosSemRotaSeguidos = 0
-        ignorarSemRotaAte = 0L
         estavaEmLutaCaminhando = false
         verdeRelAntesDaLuta = null
         indiceCliqueVariavel = 0
@@ -619,54 +605,10 @@ object Rota {
 
         fase = FaseNavegacao.ESCOLHER
         estadoPino.reiniciar(preservarFalhas = true)
-        quadrosSemRota = 0
         return formatarLog(
             faseNome, pinoId, score, qtdVerde, rgbVerde, distPx, progressoAntesReset,
             "$motivo (falhas=$falhasPino/${Cal.MAX_FALHAS_PINO})"
         )
-    }
-
-    private fun temSemRota(tela: Bitmap): Boolean {
-        val x0 = (tela.width * Cal.SEM_ROTA_X0)
-            .toInt().coerceIn(0, tela.width - 1)
-        val y0 = (tela.height * Cal.SEM_ROTA_Y0)
-            .toInt().coerceIn(0, tela.height - 1)
-        val x1 = (tela.width * Cal.SEM_ROTA_X1)
-            .toInt().coerceIn(x0 + 1, tela.width)
-        val y1 = (tela.height * Cal.SEM_ROTA_Y1)
-            .toInt().coerceIn(y0 + 1, tela.height)
-
-        val rw = x1 - x0
-        val rh = y1 - y0
-        if (rw <= 0 || rh <= 0) return false
-
-        val px = IntArray(rw * rh)
-        tela.getPixels(px, 0, rw, x0, y0, rw, rh)
-
-        var pixelsTextoClaro = 0
-        for (p in px) {
-            val r = (p shr 16) and 0xFF
-            val g = (p shr 8) and 0xFF
-            val b = p and 0xFF
-            val ehTextoMensagem = r >= 250 && g >= 250 && b >= 250
-            if (ehTextoMensagem) {
-                pixelsTextoClaro++
-            }
-        }
-
-        val pontoOp = pontoOpcionalMensagemSemRota
-        if (pontoOp != null) {
-            val pxOpX = (pontoOp.first * tela.width).toInt().coerceIn(0, tela.width - 1)
-            val pxOpY = (pontoOp.second * tela.height).toInt().coerceIn(0, tela.height - 1)
-            val corOp = tela.getPixel(pxOpX, pxOpY)
-            val rOp = (corOp shr 16) and 0xFF
-            val gOp = (corOp shr 8) and 0xFF
-            val bOp = corOp and 0xFF
-            val marcadorAtivo = rOp >= 195 && gOp >= 195 && bOp >= 200
-            if (!marcadorAtivo) return false
-        }
-
-        return pixelsTextoClaro in 100..600
     }
 
     @Volatile
@@ -1942,22 +1884,6 @@ if (!gestoItem.first) {
                 return formatarLog(
                     fase.name, indice, melhorScore, ultimoQtdVerde, ultimoRgbVerde, ultimaDistVerde, semProgresso, "aguardando pino ficar verde"
                 )
-            }
-
-            if (agora >= ignorarSemRotaAte && temSemRota(tela)) {
-                quadrosSemRotaSeguidos++
-                if (quadrosSemRotaSeguidos >= 2) {
-                    quadrosSemRota = 0
-                    quadrosSemRotaSeguidos = 0
-                    ignorarSemRotaAte = agora + Cal.IGNORAR_SEM_ROTA_MS
-                    falhasPino += 1
-                    return registrarFalhaPino(
-                        agora, fase.name, indice, melhorScore, ultimoQtdVerde, ultimoRgbVerde,
-                        ultimaDistVerde, semProgresso, "nao ha rota", context, tela
-                    )
-                }
-            } else {
-                quadrosSemRotaSeguidos = 0
             }
 
             if (iniciouCaminhadaEm > 0L && (agora - iniciouCaminhadaEm) >= tempoMaxPinoMs) {
