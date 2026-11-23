@@ -264,6 +264,7 @@ object Rota {
     @Volatile
     private var melhorScore = 0.0
 
+    @Synchronized
     fun carregar(ctx: Context, inicio: Int, fim: Int, larguraTela: Int) {
         val catalogo = CatalogoPinos.validar(ctx, inicio, fim)
         check(catalogo.valido) { catalogo.erro ?: "Catálogo de pinos vazio." }
@@ -295,6 +296,7 @@ object Rota {
         resetar()
     }
 
+    @Synchronized
     fun limpar() {
         modelos = emptyList()
         resetar()
@@ -324,6 +326,7 @@ object Rota {
         return "$logClique | luta->clique=${deltaMs}ms"
     }
 
+    @Synchronized
     fun resetar() {
         fase = FaseNavegacao.ESCOLHER
         alvo = 0
@@ -420,12 +423,14 @@ object Rota {
         LogRota.registrarPasso(ctx, msg, tela)
     }
 
+    @Synchronized
     fun iniciarPausaManual() {
         if (pausaManualDesde == 0L) {
             pausaManualDesde = SystemClock.uptimeMillis()
         }
     }
 
+    @Synchronized
     fun compensarPausaManual() {
         val inicio = pausaManualDesde
         if (inicio <= 0L) return
@@ -443,6 +448,7 @@ object Rota {
 
     fun estaPausadoPorPinoPerdido(): Boolean = pausadoPorPinoPerdido
 
+    @Synchronized
     fun retomarPausaPinoPerdido() {
         pausadoPorPinoPerdido = false
         pausadoAte = 0L
@@ -1284,6 +1290,7 @@ if (!gestoItem.first) {
         }
     }
 
+    @Synchronized
     fun passo(
         tela: Bitmap,
         context: Context,
