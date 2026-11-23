@@ -64,41 +64,58 @@ class BotService : Service() {
         private const val NOTIFICACAO_ID = 71
         private const val INTERVALO_CICLO_MS = 450L
 
-        private var mediaPlayer: MediaPlayer? = null
+        private val alarmeLock = Any()
+        @Volatile private var mediaPlayer: MediaPlayer? = null
 
         fun tocarAlarme(ctx: Context, uriStr: String, volumeProgresso: Int) {
-            try {
-                if (mediaPlayer == null) {
-                    val uri = if (uriStr.isNotEmpty() && uriStr != "alarme_pino") Uri.parse(uriStr) else RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-                    mediaPlayer = MediaPlayer().apply {
-                        setDataSource(ctx, uri)
-                        setAudioAttributes(
-                            AudioAttributes.Builder()
-                                .setUsage(AudioAttributes.USAGE_ALARM)
-                                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                                .build()
-                        )
-                        isLooping = true
-                        prepare()
+            synchronized(alarmeLock) {
+                try {
+                    if (mediaPlayer == null) {
+                        val uri = if (uriStr.isNotBlank() && uriStr != "alarme_pino") Uri.parse(uriStr)
+                            else RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+                        if (uri == null) throw IllegalStateException("Som de alarme padrão indisponível")
+                        val novo = MediaPlayer()
+                        try {
+                            novo.setDataSource(ctx.applicationContext, uri)
+                            novo.setAudioAttributes(
+                                AudioAttributes.Builder()
+                                    .setUsage(AudioAttributes.USAGE_ALARM)
+                                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                                    .build()
+                            )
+                            novo.isLooping = true
+                            novo.prepare()
+                            mediaPlayer = novo
+                        } catch (e: Exception) {
+                            novo.release()
+                            throw e
+                        }
                     }
+                    val vol = volumeProgresso.coerceIn(0, 100) / 100f
+                    mediaPlayer?.setVolume(vol, vol)
+                    if (mediaPlayer?.isPlaying == false) mediaPlayer?.start()
+                } catch (e: Exception) {
+                    try { mediaPlayer?.release() } catch (_: Exception) {}
+                    mediaPlayer = null
+                    android.util.Log.e("RotaBot", "Falha ao iniciar alarme", e)
+                    try { LogRota.registrarPasso(ctx, "ALARME_FALHA ${e.javaClass.simpleName}", null) } catch (_: Exception) {}
                 }
-                val vol = (volumeProgresso.coerceIn(0, 100) / 100f)
-                mediaPlayer?.setVolume(vol, vol)
-
-                if (mediaPlayer?.isPlaying == false) {
-                    mediaPlayer?.start()
-                }
-            } catch (_: Exception) {}
+            }
         }
 
         fun pararAlarme() {
-            try {
-                mediaPlayer?.let {
-                    if (it.isPlaying) it.stop()
-                    it.release()
+            synchronized(alarmeLock) {
+                try {
+                    mediaPlayer?.let {
+                        if (it.isPlaying) it.stop()
+                        it.release()
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.w("RotaBot", "Falha ao liberar alarme", e)
+                } finally {
+                    mediaPlayer = null
                 }
-                mediaPlayer = null
-            } catch (_: Exception) {}
+            }
         }
     }
 
