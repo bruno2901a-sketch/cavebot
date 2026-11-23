@@ -1950,7 +1950,8 @@ if (!gestoItem.first) {
                     quadrosSemRota = 0
                     quadrosSemRotaSeguidos = 0
                     ignorarSemRotaAte = agora + Cal.IGNORAR_SEM_ROTA_MS
-                    falhasPino += 1
+                    // registrarFalhaPino() incrementa falhasPino internamente.
+                    // Nao incrementar aqui para evitar contar a mesma falha duas vezes.
                     return registrarFalhaPino(
                         agora, fase.name, indice, melhorScore, ultimoQtdVerde, ultimoRgbVerde,
                         ultimaDistVerde, semProgresso, "nao ha rota", context, tela
