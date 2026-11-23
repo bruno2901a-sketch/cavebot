@@ -3,6 +3,7 @@ package com.rotabot
 import android.app.Activity
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -41,6 +42,7 @@ class BotService : Service() {
         const val ACAO_PAUSAR = "com.rotabot.PAUSAR"
         const val ACAO_RETOMAR = "com.rotabot.RETOMAR"
         const val ACAO_PARAR = "com.rotabot.PARAR"
+        const val ACAO_ALTERNAR_PAUSA = "com.rotabot.ALTERNAR_PAUSA"
         const val EXTRA_INICIO = "inicio"
         const val EXTRA_FIM = "fim"
         const val EXTRA_RESULTADO = "resultado"
@@ -198,6 +200,23 @@ class BotService : Service() {
                 EstadoBotController.definir(if (rodando) EstadoBot.NAVEGANDO else EstadoBot.PRONTO)
                 Rota.retomarPausaPinoPerdido()
                 BotService.pararAlarme()
+            }
+            ACAO_ALTERNAR_PAUSA -> {
+                if (pausaManual) {
+                    Rota.compensarPausaManual()
+                    Rota.cancelarAutoloot = false
+                    pausaManual = false
+                    EstadoBotController.definir(if (rodando) EstadoBot.NAVEGANDO else EstadoBot.PRONTO)
+                    Rota.retomarPausaPinoPerdido()
+                    pararAlarme()
+                } else {
+                    Rota.iniciarPausaManual()
+                    Rota.cancelarAutoloot = true
+                    pausaManual = true
+                    EstadoBotController.definir(EstadoBot.PAUSADO)
+                }
+                atualizarNotificacao()
+                registrarStatus(if (pausaManual) "Pausado" else "Retomado")
             }
             ACAO_PARAR -> {
                 Rota.cancelarAutoloot = true
@@ -595,7 +614,8 @@ class BotService : Service() {
                 WindowManager.LayoutParams.WRAP_CONTENT, WindowManager.LayoutParams.WRAP_CONTENT,
                 if (Build.VERSION.SDK_INT >= 26) WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
                 else WindowManager.LayoutParams.TYPE_PHONE,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_SECURE or WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
+                PixelFormat.TRANSLUCENT
             ).apply {
                 gravity = Gravity.TOP or Gravity.START
                 x = 320
@@ -685,15 +705,33 @@ class BotService : Service() {
     }
 
     private fun iniciarNotificacao() {
-        if (Build.VERSION.SDK_INT >= 26) {
-            val channel = NotificationChannel(CANAL, "RotaBot", NotificationManager.IMPORTANCE_LOW)
-            (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(channel)
-        }
-        val notification = NotificationCompat.Builder(this, CANAL)
-            .setContentTitle("RotaBot Ativo")
+        startForeground(NOTIFICACAO_ID, construirNotificacao())
+    }
+
+    private fun atualizarNotificacao() {
+        val manager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
+        manager.notify(NOTIFICACAO_ID, construirNotificacao())
+    }
+
+    private fun construirNotificacao(): android.app.Notification {
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        val abrirPending = PendingIntent.getActivity(this, 710, Intent(this, MainActivity::class.java), flags)
+        val alternar = Intent(this, BotService::class.java).setAction(ACAO_ALTERNAR_PAUSA)
+        val alternarPending = PendingIntent.getService(this, 711, alternar, flags)
+        val parar = Intent(this, BotService::class.java).setAction(ACAO_PARAR)
+        val pararPending = PendingIntent.getService(this, 712, parar, flags)
+        val acaoPausa = if (pausaManual) "Retomar" else "Pausar"
+        val iconePausa = if (pausaManual) android.R.drawable.ic_media_play else android.R.drawable.ic_media_pause
+        val texto = if (pausaManual) "Rota pausada" else "Rota em execução"
+        return NotificationCompat.Builder(this, CANAL)
+            .setContentTitle("RotaBot")
+            .setContentText(texto)
             .setSmallIcon(android.R.drawable.ic_menu_compass)
+            .setContentIntent(abrirPending)
+            .setOngoing(true)
+            .addAction(iconePausa, acaoPausa, alternarPending)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Parar", pararPending)
             .build()
-        startForeground(NOTIFICACAO_ID, notification)
     }
 
     override fun onDestroy() {
