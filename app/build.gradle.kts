@@ -1,7 +1,7 @@
 plugins {
     id("com.android.application") version "8.6.1"
     id("org.jetbrains.kotlin.android") version "1.9.24"
-    id("kotlin-parcelize")
+    id("kotlin-parcelize") version "1.9.24"
 }
 
 android {
