@@ -634,7 +634,6 @@ class BotService : Service() {
                     if (!rotaIniciada) {
                         Rota.resetar()
                         Rota.cancelarAutoloot = false
-                        val agoraInicio = SystemClock.uptimeMillis()
                         rotaIniciada = true
                         rodando = true
                         pausaManual = false
