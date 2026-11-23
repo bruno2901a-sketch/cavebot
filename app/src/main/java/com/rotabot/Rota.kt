@@ -148,67 +148,10 @@ object Rota {
     private val estadoPino = EstadoPino()
     private val maquinaNavegacao = NavigationStateMachine()
     private val pausaPinoLock = Any()
-    private var quadrosChegada: Int
-        get() = estadoPino.quadrosChegada
-        set(v) { estadoPino.quadrosChegada = v }
-    private var quadrosPertoDaCruz: Int
-        get() = estadoPino.quadrosPertoDaCruz
-        set(v) { estadoPino.quadrosPertoDaCruz = v }
-    private var quadrosSumidoVerde: Int
-        get() = estadoPino.quadrosSumidoVerde
-        set(v) { estadoPino.quadrosSumidoVerde = v }
-    private var ultimaDist: Float
-        get() = estadoPino.ultimaDist
-        set(v) { estadoPino.ultimaDist = v }
-    private var ultimaDistVerde: Float
-        get() = estadoPino.ultimaDistVerde
-        set(v) { estadoPino.ultimaDistVerde = v }
-    private var menorDistVerde: Float
-        get() = estadoPino.menorDistVerde
-        set(v) { estadoPino.menorDistVerde = v }
-    private var semProgresso: Int
-        get() = estadoPino.semProgresso
-        set(v) { estadoPino.semProgresso = v }
-    private var cliquesVerde: Int
-        get() = estadoPino.cliquesVerde
-        set(v) { estadoPino.cliquesVerde = v }
-    private var naoVisto: Int
-        get() = estadoPino.naoVisto
-        set(v) { estadoPino.naoVisto = v }
-    private var falhasPino: Int
-        get() = estadoPino.falhasPino
-        set(v) { estadoPino.falhasPino = v }
-    private var quadrosQuaseLimiar: Int
-        get() = estadoPino.quadrosQuaseLimiar
-        set(v) { estadoPino.quadrosQuaseLimiar = v }
-    private var ultimoCandidatoQuaseLimiar: Pair<Int, Int>?
-        get() = estadoPino.ultimoCandidatoQuaseLimiar
-        set(v) { estadoPino.ultimoCandidatoQuaseLimiar = v }
-    private var candidatoConsistente: Pair<Int, Int>?
-        get() = estadoPino.candidatoConsistente
-        set(v) { estadoPino.candidatoConsistente = v }
     private var estavaEmLuta = false
     private var tempoInicioLuta = 0L
     private var estavaEmLutaCaminhando = false
     private var verdeRelAntesDaLuta: Pair<Int, Int>? = null
-    private var retomarVerdeAte: Long
-        get() = estadoPino.retomarVerdeAte
-        set(v) { estadoPino.retomarVerdeAte = v }
-    private var verdeVeioDeTemplate: Boolean
-        get() = estadoPino.verdeVeioDeTemplate
-        set(v) { estadoPino.verdeVeioDeTemplate = v }
-    private var ultimoVerdeRel: Pair<Int, Int>?
-        get() = estadoPino.ultimoVerdeRel
-        set(v) { estadoPino.ultimoVerdeRel = v }
-    private var ultimoQtdVerde: Int
-        get() = estadoPino.ultimoQtdVerde
-        set(v) { estadoPino.ultimoQtdVerde = v }
-    private var ultimoRgbVerde: Triple<Int, Int, Int>?
-        get() = estadoPino.ultimoRgbVerde
-        set(v) { estadoPino.ultimoRgbVerde = v }
-    private var vistoVerde: Boolean
-        get() = estadoPino.vistoVerde
-        set(v) { estadoPino.vistoVerde = v }
     private var indiceCliqueVariavel = 0
     private var fimLutaEm = 0L
     private var versaoRegistradaNoLog = false
@@ -227,18 +170,6 @@ object Rota {
     private var ultimoRecorteMinimapaH = 0
     private var minimapaParadoDesde = 0L
     private var ultimaDiffMinimapa = 0.0
-    private var resyncUsadoNestePino: Boolean
-        get() = estadoPino.resyncUsadoNestePino
-        set(v) { estadoPino.resyncUsadoNestePino = v }
-    private var nivelRecuperacaoPino: Int
-        get() = estadoPino.nivelRecuperacaoPino
-        set(v) { estadoPino.nivelRecuperacaoPino = v }
-    private var ultimoPosPinoConhecidaRel: Pair<Int, Int>?
-        get() = estadoPino.ultimoPosPinoConhecidaRel
-        set(v) { estadoPino.ultimoPosPinoConhecidaRel = v }
-    private var ultimoPosPinoEraVerde: Boolean
-        get() = estadoPino.ultimoPosPinoEraVerde
-        set(v) { estadoPino.ultimoPosPinoEraVerde = v }
     private var quadrosPresencaLutaSeguidos = 0
 
     private var battleAncoraX: Int = -1
@@ -390,16 +321,16 @@ object Rota {
         estadoPino.reiniciar(preservarFalhas = true)
         fase = FaseNavegacao.CAMINHANDO
         maquinaNavegacao.transition(NavigationState.Caminhando(alvo + 1))
-        ultimoVerdeRel = relPos
-        ultimoPosPinoConhecidaRel = relPos
-        ultimoPosPinoEraVerde = veioDeTemplate
-        ultimoQtdVerde = 0
-        ultimoRgbVerde = null
-        vistoVerde = false
-        verdeVeioDeTemplate = veioDeTemplate
-        ultimaDistVerde = distAtual
-        menorDistVerde = distAtual
-        ultimaDist = distAtual
+        estadoPino.ultimoVerdeRel = relPos
+        estadoPino.ultimoPosPinoConhecidaRel = relPos
+        estadoPino.ultimoPosPinoEraVerde = veioDeTemplate
+        estadoPino.ultimoQtdVerde = 0
+        estadoPino.ultimoRgbVerde = null
+        estadoPino.vistoVerde = false
+        estadoPino.verdeVeioDeTemplate = veioDeTemplate
+        estadoPino.ultimaDistVerde = distAtual
+        estadoPino.menorDistVerde = distAtual
+        estadoPino.ultimaDist = distAtual
         iniciouCaminhadaEm = agora
         tempoMaxPinoMs = calcularTempoMaxPinoMs(distAtual)
     }
@@ -439,7 +370,7 @@ object Rota {
             if (inicioPresencaLutaMs > 0L) inicioPresencaLutaMs += duracao
             if (inicioAusenciaLutaMs > 0L) inicioAusenciaLutaMs += duracao
             if (iniciouCaminhadaEm > 0L) iniciouCaminhadaEm += duracao
-            if (retomarVerdeAte > 0L) retomarVerdeAte += duracao
+            if (estadoPino.retomarVerdeAte > 0L) estadoPino.retomarVerdeAte += duracao
             if (pausadoAte > 0L) pausadoAte += duracao
             if (fimLutaEm > 0L) fimLutaEm += duracao
         }
@@ -517,7 +448,7 @@ object Rota {
             iniciouCaminhadaEm = 0L
             pausadoAte = agora + 200L
             estadoPino.reiniciar(preservarFalhas = true)
-            falhasPino = 0
+            estadoPino.falhasPino = 0
             registrarLogAlvo(context, tela)
             return true
         }
@@ -529,17 +460,17 @@ object Rota {
         dist: Float,
         estadoMini: EstadoComparacaoMinimapa,
         tempoParadoMs: Long,
-        vistoVerdeParam: Boolean,
-        verdeVeioDeTemplateParam: Boolean
+        estadoPino.vistoVerdeParam: Boolean,
+        estadoPino.verdeVeioDeTemplateParam: Boolean
     ): Boolean {
         val toleranciaCasaPx = Cal.TOLERANCIA_CHEGADA_CASAS * pixelsPorCasa
         val minimapaParadoSuficiente = !estadoMini.emMovimento && tempoParadoMs >= Cal.TEMPO_MINIMO_PARADO_CHEGADA_MS
         val dentroTolerancia = dist >= 0f && dist <= toleranciaCasaPx
-        if (dentroTolerancia && minimapaParadoSuficiente && (vistoVerdeParam || verdeVeioDeTemplateParam)) {
-            quadrosChegada++
-            return quadrosChegada >= 2
+        if (dentroTolerancia && minimapaParadoSuficiente && (estadoPino.vistoVerdeParam || estadoPino.verdeVeioDeTemplateParam)) {
+            estadoPino.quadrosChegada++
+            return estadoPino.quadrosChegada >= 2
         }
-        quadrosChegada = 0
+        estadoPino.quadrosChegada = 0
         return false
     }
 
@@ -620,18 +551,18 @@ object Rota {
         context: Context? = null,
         tela: Bitmap? = null
     ): String {
-        falhasPino++
+        estadoPino.falhasPino++
         if (context != null) {
             LogRota.registrarPasso(
                 context,
-                "FALHA_PINO pino=$pinoId motivo=$motivo falhas=$falhasPino/${Cal.MAX_FALHAS_PINO}",
+                "FALHA_PINO pino=$pinoId motivo=$motivo falhas=$estadoPino.falhasPino/${Cal.MAX_FALHAS_PINO}",
                 tela
             )
         }
-        if (falhasPino >= Cal.MAX_FALHAS_PINO) {
+        if (estadoPino.falhasPino >= Cal.MAX_FALHAS_PINO) {
             val logAvanco = formatarLog(
                 faseNome, pinoId, score, qtdVerde, rgbVerde, distPx, progressoAntesReset,
-                "$motivo (falhas=$falhasPino -> recuperacao/pausa)"
+                "$motivo (falhas=$estadoPino.falhasPino -> recuperacao/pausa)"
             )
             tratarEsgotamentoPinoSemPulo(agora, pinoId, context, tela)
             return logAvanco
@@ -641,7 +572,7 @@ object Rota {
         estadoPino.reiniciar(preservarFalhas = true)
         return formatarLog(
             faseNome, pinoId, score, qtdVerde, rgbVerde, distPx, progressoAntesReset,
-            "$motivo (falhas=$falhasPino/${Cal.MAX_FALHAS_PINO})"
+            "$motivo (falhas=$estadoPino.falhasPino/${Cal.MAX_FALHAS_PINO})"
         )
     }
 
@@ -1270,7 +1201,7 @@ if (!gestoItem.first) {
             "rgb(0,0,0)"
         }
         val diffStr = "%.2f".format(Locale.ROOT, ultimaDiffMinimapa)
-        val base = "fase=$faseNome | pino=$pinoId | acerto=$scoreStr | verde=$qtdVerde | $rgbStr | dist=$distStr | semProgresso=$progresso | diffMini=$diffStr"
+        val base = "fase=$faseNome | pino=$pinoId | acerto=$scoreStr | verde=$qtdVerde | $rgbStr | dist=$distStr | estadoPino.semProgresso=$progresso | diffMini=$diffStr"
         return if (extra != null && extra.isNotEmpty()) "$base | $extra" else base
     }
 
@@ -1675,10 +1606,10 @@ if (!gestoItem.first) {
         val maxToqueY = (tela.height - 28f).coerceAtLeast(minToqueY)
         val pinoId = modelo.indice
 
-        maquinaNavegacao.transition(NavigationState.Recuperando(pinoId, nivelRecuperacaoPino + 1))
-        if (nivelRecuperacaoPino == 0) {
+        maquinaNavegacao.transition(NavigationState.Recuperando(pinoId, estadoPino.nivelRecuperacaoPino + 1))
+        if (estadoPino.nivelRecuperacaoPino == 0) {
             val buscaTemplate = buscarTemplateSemAlterarEstado(tela, x0, y0, x1, y1, modelo, cx, cy)
-            val posReal = ultimoPosPinoConhecidaRel ?: buscaTemplate.first?.let {
+            val posReal = estadoPino.ultimoPosPinoConhecidaRel ?: buscaTemplate.first?.let {
                 Pair((it.first - x0).coerceIn(0, rwSafe(x0, x1) - 1), (it.second - y0).coerceIn(0, rhSafe(y0, y1) - 1))
             }
             if (posReal != null) {
@@ -1686,18 +1617,18 @@ if (!gestoItem.first) {
                 val py = (y0 + posReal.second).toFloat().coerceIn(minToqueY, maxToqueY)
                 val toque = dispararToqueSeguro(tela.width, tela.height, px, py, tocar)
                 ultimoClique = agora
-                nivelRecuperacaoPino = 1
+                estadoPino.nivelRecuperacaoPino = 1
                 val logToque = anexarTempoPosLuta("CLIQUE ${toque.first.toInt()},${toque.second.toInt()}", agora)
                 return formatarLog(
-                    fase.name, pinoId, melhorScore, ultimoQtdVerde, ultimoRgbVerde,
-                    ultimaDistVerde, semProgresso, "RECUPERACAO_1_RECLIQUE_REAL | $logToque"
+                    fase.name, pinoId, melhorScore, estadoPino.ultimoQtdVerde, estadoPino.ultimoRgbVerde,
+                    estadoPino.ultimaDistVerde, estadoPino.semProgresso, "RECUPERACAO_1_RECLIQUE_REAL | $logToque"
                 )
             }
-            nivelRecuperacaoPino = 1
+            estadoPino.nivelRecuperacaoPino = 1
         }
 
-        if (nivelRecuperacaoPino == 1) {
-            val posBase = ultimoPosPinoConhecidaRel
+        if (estadoPino.nivelRecuperacaoPino == 1) {
+            val posBase = estadoPino.ultimoPosPinoConhecidaRel
             if (posBase != null) {
                 val offsets = arrayOf(Pair(8f, 0f), Pair(-8f, 0f), Pair(0f, 8f), Pair(0f, -8f), Pair(10f, 6f), Pair(-10f, -6f), Pair(6f, -10f), Pair(-6f, 10f))
                 val off = offsets[indiceCliqueVariavel++ % offsets.size]
@@ -1705,27 +1636,27 @@ if (!gestoItem.first) {
                 val py = (y0 + posBase.second + off.second).coerceIn(y0 + 15f, y1 - 15f).coerceIn(minToqueY, maxToqueY)
                 val toque = dispararToqueSeguro(tela.width, tela.height, px, py, tocar)
                 ultimoClique = agora
-                nivelRecuperacaoPino = 2
+                estadoPino.nivelRecuperacaoPino = 2
                 val logToque = anexarTempoPosLuta("CLIQUE ${toque.first.toInt()},${toque.second.toInt()}", agora)
                 return formatarLog(
-                    fase.name, pinoId, melhorScore, ultimoQtdVerde, ultimoRgbVerde,
-                    ultimaDistVerde, semProgresso, "RECUPERACAO_2_DESLOCAMENTO_LATERAL | $logToque"
+                    fase.name, pinoId, melhorScore, estadoPino.ultimoQtdVerde, estadoPino.ultimoRgbVerde,
+                    estadoPino.ultimaDistVerde, estadoPino.semProgresso, "RECUPERACAO_2_DESLOCAMENTO_LATERAL | $logToque"
                 )
             }
-            nivelRecuperacaoPino = 2
+            estadoPino.nivelRecuperacaoPino = 2
         }
 
-        if (nivelRecuperacaoPino == 2) {
+        if (estadoPino.nivelRecuperacaoPino == 2) {
             LogRota.registrarPasso(
                 context,
                 "AVISO_ZOOM_CURTO: app nao possui gesto de zoom curto implementado; avancando para resync/alarme",
                 tela
             )
-            nivelRecuperacaoPino = 3
+            estadoPino.nivelRecuperacaoPino = 3
         }
 
-        if (!resyncUsadoNestePino) {
-            resyncUsadoNestePino = true
+        if (!estadoPino.resyncUsadoNestePino) {
+            estadoPino.resyncUsadoNestePino = true
             val resyncLog = tentarResyncPino(tela, x0, y0, x1, y1, cx, cy, toleranciaChegada, agora, context)
             if (resyncLog != null) {
                 return formatarLog(
@@ -1733,9 +1664,9 @@ if (!gestoItem.first) {
                     if (alvo in modelos.indices) modelos[alvo].indice else pinoId,
                     melhorScore,
                     0,
-                    ultimoRgbVerde,
+                    estadoPino.ultimoRgbVerde,
                     -1f,
-                    semProgresso,
+                    estadoPino.semProgresso,
                     "RECUPERACAO_RESYNC | $resyncLog"
                 )
             }
@@ -1749,10 +1680,10 @@ if (!gestoItem.first) {
             faseNome = fase.name,
             pinoId = pinoId,
             score = melhorScore,
-            qtdVerde = ultimoQtdVerde,
-            rgbVerde = ultimoRgbVerde,
-            distPx = ultimaDistVerde,
-            progressoAntesReset = semProgresso,
+            qtdVerde = estadoPino.ultimoQtdVerde,
+            rgbVerde = estadoPino.ultimoRgbVerde,
+            distPx = estadoPino.ultimaDistVerde,
+            progressoAntesReset = estadoPino.semProgresso,
             motivo = "pino nao localizado apos escada de recuperacao",
             context = context,
             tela = tela
@@ -1799,7 +1730,7 @@ if (!gestoItem.first) {
                     maquinaNavegacao.transition(NavigationState.Lutando(agoraSemCruz))
                     tempoInicioLuta = agoraSemCruz
                     estavaEmLutaCaminhando = (fase == FaseNavegacao.CAMINHANDO)
-                    verdeRelAntesDaLuta = ultimoVerdeRel
+                    verdeRelAntesDaLuta = estadoPino.ultimoVerdeRel
                     estadoLogLutaAlarme = 0
                 }
                 val duracao = (agoraSemCruz - tempoInicioLuta).coerceAtLeast(0L)
@@ -1848,7 +1779,7 @@ if (!gestoItem.first) {
                 maquinaNavegacao.transition(NavigationState.Lutando(agora))
                 tempoInicioLuta = agora
                 estavaEmLutaCaminhando = (fase == FaseNavegacao.CAMINHANDO)
-                verdeRelAntesDaLuta = ultimoVerdeRel
+                verdeRelAntesDaLuta = estadoPino.ultimoVerdeRel
                 estadoLogLutaAlarme = 0
             }
 
@@ -1908,11 +1839,11 @@ if (!gestoItem.first) {
                 LogRota.registrarPasso(context, "AUTOLOOT ignorado: luta curta", tela)
                 ultimoClique = 0L
                 pausadoAte = agora + 200L
-                quadrosChegada = 0
-                quadrosSumidoVerde = 0
-                semProgresso = 0
-                cliquesVerde = 0
-                naoVisto = 0
+                estadoPino.quadrosChegada = 0
+                estadoPino.quadrosSumidoVerde = 0
+                estadoPino.semProgresso = 0
+                estadoPino.cliquesVerde = 0
+                estadoPino.naoVisto = 0
 
                 val verdeRetomada = if (veioDeCaminhando && refVerde != null) {
                     modelos.getOrNull(alvo)?.let { modeloAtual ->
@@ -1929,17 +1860,17 @@ if (!gestoItem.first) {
                     ).toFloat()
                     fase = FaseNavegacao.CAMINHANDO
                     maquinaNavegacao.transition(NavigationState.Caminhando(alvo + 1))
-                    ultimoVerdeRel = posRetomada
-                    ultimoPosPinoConhecidaRel = posRetomada
-                    ultimoPosPinoEraVerde = true
-                    vistoVerde = true
-                    ultimoQtdVerde = verdeRetomada.quantidade
-                    ultimoRgbVerde = verdeRetomada.rgbMedio
-                    ultimaDistVerde = distRetomada
-                    if (menorDistVerde < 0f || distRetomada < menorDistVerde) {
-                        menorDistVerde = distRetomada
+                    estadoPino.ultimoVerdeRel = posRetomada
+                    estadoPino.ultimoPosPinoConhecidaRel = posRetomada
+                    estadoPino.ultimoPosPinoEraVerde = true
+                    estadoPino.vistoVerde = true
+                    estadoPino.ultimoQtdVerde = verdeRetomada.quantidade
+                    estadoPino.ultimoRgbVerde = verdeRetomada.rgbMedio
+                    estadoPino.ultimaDistVerde = distRetomada
+                    if (estadoPino.menorDistVerde < 0f || distRetomada < estadoPino.menorDistVerde) {
+                        estadoPino.menorDistVerde = distRetomada
                     }
-                    retomarVerdeAte = agora + 2000L
+                    estadoPino.retomarVerdeAte = agora + 2000L
                     iniciouCaminhadaEm = agora
                     tempoMaxPinoMs = calcularTempoMaxPinoMs(
                         if (distRetomada > 0f) distRetomada else pixelsPorCasa * 4f
@@ -1950,12 +1881,12 @@ if (!gestoItem.first) {
 
                 fase = FaseNavegacao.ESCOLHER
                 maquinaNavegacao.transition(NavigationState.Escolhendo)
-                retomarVerdeAte = 0L
-                verdeVeioDeTemplate = false
-                ultimoVerdeRel = null
-                ultimoQtdVerde = 0
-                ultimoRgbVerde = null
-                vistoVerde = false
+                estadoPino.retomarVerdeAte = 0L
+                estadoPino.verdeVeioDeTemplate = false
+                estadoPino.ultimoVerdeRel = null
+                estadoPino.ultimoQtdVerde = 0
+                estadoPino.ultimoRgbVerde = null
+                estadoPino.vistoVerde = false
                 return "AUTOLOOT ignorado: luta curta - procurando pino"
             }
 
@@ -1975,27 +1906,27 @@ if (!gestoItem.first) {
 
             ultimoClique = 0L
             pausadoAte = agoraPosLoot + 200L
-            quadrosChegada = 0
-            quadrosSumidoVerde = 0
-            ultimaDist = -1f
-            ultimaDistVerde = -1f
-            menorDistVerde = -1f
-            semProgresso = 0
-            cliquesVerde = 0
-            naoVisto = 0
+            estadoPino.quadrosChegada = 0
+            estadoPino.quadrosSumidoVerde = 0
+            estadoPino.ultimaDist = -1f
+            estadoPino.ultimaDistVerde = -1f
+            estadoPino.menorDistVerde = -1f
+            estadoPino.semProgresso = 0
+            estadoPino.cliquesVerde = 0
+            estadoPino.naoVisto = 0
 
             // O autoloot pode durar dezenas de segundos. Sem quadro novo,
             // não reutiliza a imagem antiga para decidir a retomada da caminhada.
             val telaPosLoot = if (usaLoot) capturarQuadroFresco() else tela
             if (telaPosLoot == null) {
                 fase = FaseNavegacao.ESCOLHER
-                retomarVerdeAte = 0L
-                verdeVeioDeTemplate = false
-                ultimoVerdeRel = null
-                ultimoQtdVerde = 0
-                ultimoRgbVerde = null
-                vistoVerde = false
-                falhasPino = 0
+                estadoPino.retomarVerdeAte = 0L
+                estadoPino.verdeVeioDeTemplate = false
+                estadoPino.ultimoVerdeRel = null
+                estadoPino.ultimoQtdVerde = 0
+                estadoPino.ultimoRgbVerde = null
+                estadoPino.vistoVerde = false
+                estadoPino.falhasPino = 0
                 LogRota.registrarPasso(context, "AUTOLOOT pós-luta sem quadro fresco - aguardando nova imagem", tela)
                 return "AUTOLOOT concluído - aguardando quadro novo"
             }
@@ -2019,16 +1950,16 @@ if (!gestoItem.first) {
                     ).toFloat()
                     fase = FaseNavegacao.CAMINHANDO
                     maquinaNavegacao.transition(NavigationState.Caminhando(alvo + 1))
-                    ultimoVerdeRel = posRel
-                    ultimoPosPinoConhecidaRel = posRel
-                    ultimoPosPinoEraVerde = true
-                    verdeVeioDeTemplate = false
-                    vistoVerde = true
-                    ultimoQtdVerde = verdePosLoot.quantidade
-                    ultimoRgbVerde = verdePosLoot.rgbMedio
-                    ultimaDistVerde = distPosLoot
-                    menorDistVerde = distPosLoot
-                    retomarVerdeAte = agoraPosLoot + 2000L
+                    estadoPino.ultimoVerdeRel = posRel
+                    estadoPino.ultimoPosPinoConhecidaRel = posRel
+                    estadoPino.ultimoPosPinoEraVerde = true
+                    estadoPino.verdeVeioDeTemplate = false
+                    estadoPino.vistoVerde = true
+                    estadoPino.ultimoQtdVerde = verdePosLoot.quantidade
+                    estadoPino.ultimoRgbVerde = verdePosLoot.rgbMedio
+                    estadoPino.ultimaDistVerde = distPosLoot
+                    estadoPino.menorDistVerde = distPosLoot
+                    estadoPino.retomarVerdeAte = agoraPosLoot + 2000L
                     iniciouCaminhadaEm = agoraPosLoot
                     tempoMaxPinoMs = calcularTempoMaxPinoMs(
                         if (distPosLoot > 0f) distPosLoot else pixelsPorCasa * 4f
@@ -2041,13 +1972,13 @@ if (!gestoItem.first) {
                 }
 
                 fase = FaseNavegacao.ESCOLHER
-                retomarVerdeAte = 0L
-                verdeVeioDeTemplate = false
-                ultimoVerdeRel = null
-                ultimoQtdVerde = 0
-                ultimoRgbVerde = null
-                vistoVerde = false
-                falhasPino = 0
+                estadoPino.retomarVerdeAte = 0L
+                estadoPino.verdeVeioDeTemplate = false
+                estadoPino.ultimoVerdeRel = null
+                estadoPino.ultimoQtdVerde = 0
+                estadoPino.ultimoRgbVerde = null
+                estadoPino.vistoVerde = false
+                estadoPino.falhasPino = 0
 
                 return if (usaLoot) {
                     "AUTOLOOT concluído - procurando pino"
@@ -2077,20 +2008,20 @@ if (!gestoItem.first) {
 
         if (pausadoPorPinoPerdido) {
             return formatarLog(
-                fase.name, indice, melhorScore, ultimoQtdVerde, ultimoRgbVerde, ultimaDistVerde, semProgresso, "PAUSADO_POR_PINO_PERDIDO"
+                fase.name, indice, melhorScore, estadoPino.ultimoQtdVerde, estadoPino.ultimoRgbVerde, estadoPino.ultimaDistVerde, estadoPino.semProgresso, "PAUSADO_POR_PINO_PERDIDO"
             )
         }
 
         if (agora < pausadoAte) {
             return formatarLog(
-                fase.name, indice, melhorScore, ultimoQtdVerde, ultimoRgbVerde, ultimaDistVerde, semProgresso, "estabilizando"
+                fase.name, indice, melhorScore, estadoPino.ultimoQtdVerde, estadoPino.ultimoRgbVerde, estadoPino.ultimaDistVerde, estadoPino.semProgresso, "estabilizando"
             )
         }
 
         if (fase == FaseNavegacao.CAMINHANDO) {
             if (agora - iniciouCaminhadaEm < 500L) {
                 return formatarLog(
-                    fase.name, indice, melhorScore, ultimoQtdVerde, ultimoRgbVerde, ultimaDistVerde, semProgresso, "aguardando pino ficar verde"
+                    fase.name, indice, melhorScore, estadoPino.ultimoQtdVerde, estadoPino.ultimoRgbVerde, estadoPino.ultimaDistVerde, estadoPino.semProgresso, "aguardando pino ficar verde"
                 )
             }
 
@@ -2101,68 +2032,68 @@ if (!gestoItem.first) {
                 )
             }
 
-            val janelaTripla = retomarVerdeAte > 0L && agora <= retomarVerdeAte
+            val janelaTripla = estadoPino.retomarVerdeAte > 0L && agora <= estadoPino.retomarVerdeAte
             val detVerde = if (janelaTripla) {
-                acharPinoVerdeJanelaTripla(tela, x0, y0, x1, y1, modelo, ultimoVerdeRel)
+                acharPinoVerdeJanelaTripla(tela, x0, y0, x1, y1, modelo, estadoPino.ultimoVerdeRel)
             } else {
-                acharPinoVerdeLocal(tela, x0, y0, x1, y1, modelo, ultimoVerdeRel)
+                acharPinoVerdeLocal(tela, x0, y0, x1, y1, modelo, estadoPino.ultimoVerdeRel)
             }
 
             if (detVerde != null) {
                 val verdeRel = detVerde.posicao
                 val qtdVerde = detVerde.quantidade
                 val rgbVerde = detVerde.rgbMedio
-                vistoVerde = true
-                retomarVerdeAte = 0L
-                ultimoQtdVerde = qtdVerde
-                ultimoRgbVerde = rgbVerde
-                quadrosSumidoVerde = 0
-                ultimoVerdeRel = verdeRel
-                ultimoPosPinoConhecidaRel = verdeRel
-                ultimoPosPinoEraVerde = true
+                estadoPino.vistoVerde = true
+                estadoPino.retomarVerdeAte = 0L
+                estadoPino.ultimoQtdVerde = qtdVerde
+                estadoPino.ultimoRgbVerde = rgbVerde
+                estadoPino.quadrosSumidoVerde = 0
+                estadoPino.ultimoVerdeRel = verdeRel
+                estadoPino.ultimoPosPinoConhecidaRel = verdeRel
+                estadoPino.ultimoPosPinoEraVerde = true
 
                 val absX = (x0 + verdeRel.first).toFloat()
                 val absY = (y0 + verdeRel.second).toFloat()
                 val dist = hypot((absX - cx).toDouble(), (absY - cy).toDouble()).toFloat()
-                ultimaDistVerde = dist
-                if (menorDistVerde < 0f || dist < menorDistVerde) {
-                    menorDistVerde = dist
+                estadoPino.ultimaDistVerde = dist
+                if (estadoPino.menorDistVerde < 0f || dist < estadoPino.menorDistVerde) {
+                    estadoPino.menorDistVerde = dist
                 }
 
                 val minimapaParadoSuficiente = !estadoMini.emMovimento && tempoParadoMs >= Cal.TEMPO_MINIMO_PARADO_CHEGADA_MS
-                if (chegouNoPino(dist, estadoMini, tempoParadoMs, vistoVerde, verdeVeioDeTemplate)) {
+                if (chegouNoPino(dist, estadoMini, tempoParadoMs, estadoPino.vistoVerde, estadoPino.verdeVeioDeTemplate)) {
                     ultimoConfirmado = alvo
                     proximoPino(agora, "CHEGADA_CONFIRMADA", context, tela)
                     return formatarLog(
-                        "CHEGOU", indice, melhorScore, qtdVerde, rgbVerde, dist, semProgresso,
+                        "CHEGOU", indice, melhorScore, qtdVerde, rgbVerde, dist, estadoPino.semProgresso,
                         "CHEGOU motivo=confirmada"
                     )
                 }
-                if (dist <= toleranciaChegada && minimapaParadoSuficiente && (vistoVerde || verdeVeioDeTemplate)) {
+                if (dist <= toleranciaChegada && minimapaParadoSuficiente && (estadoPino.vistoVerde || estadoPino.verdeVeioDeTemplate)) {
                     return formatarLog(
-                        fase.name, indice, melhorScore, qtdVerde, rgbVerde, dist, semProgresso, "chegando"
+                        fase.name, indice, melhorScore, qtdVerde, rgbVerde, dist, estadoPino.semProgresso, "chegando"
                     )
                 }
 
                 var logClique: String? = null
 
                 if (!estadoMini.emMovimento && tempoParadoMs >= Cal.TEMPO_PARADO_RECLIQUE_MS && (agora - ultimoClique >= intervaloCliqueMs)) {
-                    semProgresso++
+                    estadoPino.semProgresso++
                     val px = absX.coerceIn((x0 + 15f).coerceAtMost(maxToqueX(tela)), (x1 - 15f).coerceAtMost(maxToqueX(tela))).coerceIn(minToqueX(tela), maxToqueX(tela))
                     val py = absY.coerceIn(y0 + 15f, y1 - 15f).coerceIn(minToqueY(tela), maxToqueY(tela))
                     val toque = dispararToqueSeguro(tela.width, tela.height, px, py, tocar)
                     ultimoClique = agora
-                    cliquesVerde++
+                    estadoPino.cliquesVerde++
                     logClique = anexarTempoPosLuta("CLIQUE ${toque.first.toInt()},${toque.second.toInt()}", agora)
                 } else if (estadoMini.emMovimento) {
-                    semProgresso = 0
+                    estadoPino.semProgresso = 0
                     indiceCliqueVariavel = 0
                 }
-                ultimaDist = dist
+                estadoPino.ultimaDist = dist
 
-                if (!estadoMini.emMovimento && (semProgresso >= 6 || cliquesVerde >= 12)) {
-                    semProgresso = 0
-                    cliquesVerde = 0
+                if (!estadoMini.emMovimento && (estadoPino.semProgresso >= 6 || estadoPino.cliquesVerde >= 12)) {
+                    estadoPino.semProgresso = 0
+                    estadoPino.cliquesVerde = 0
                     return executarEscadaRecuperacaoPino(
                         tela, x0, y0, x1, y1, cx, cy, toleranciaChegada, agora, context, tocar, modelo
                     )
@@ -2171,45 +2102,45 @@ if (!gestoItem.first) {
                 val sentidoStr = if (direcaoIda) "IDA" else "VOLTA"
                 val extra = if (logClique != null) "$sentidoStr | $logClique" else sentidoStr
                 return formatarLog(
-                    fase.name, indice, melhorScore, qtdVerde, rgbVerde, dist, semProgresso, extra
+                    fase.name, indice, melhorScore, qtdVerde, rgbVerde, dist, estadoPino.semProgresso, extra
                 )
             } else {
-                if (retomarVerdeAte > 0L && agora > retomarVerdeAte) {
-                    retomarVerdeAte = 0L
+                if (estadoPino.retomarVerdeAte > 0L && agora > estadoPino.retomarVerdeAte) {
+                    estadoPino.retomarVerdeAte = 0L
                     fase = FaseNavegacao.ESCOLHER
-                    ultimoVerdeRel = null
-                    vistoVerde = false
-                    semProgresso = 0
-                    ultimaDist = -1f
-                    falhasPino = 0
-                    return formatarLog(fase.name, indice, melhorScore, 0, ultimoRgbVerde, ultimaDistVerde, 0, "sem verde apos luta - ESCOLHER sem penalidade")
+                    estadoPino.ultimoVerdeRel = null
+                    estadoPino.vistoVerde = false
+                    estadoPino.semProgresso = 0
+                    estadoPino.ultimaDist = -1f
+                    estadoPino.falhasPino = 0
+                    return formatarLog(fase.name, indice, melhorScore, 0, estadoPino.ultimoRgbVerde, estadoPino.ultimaDistVerde, 0, "sem verde apos luta - ESCOLHER sem penalidade")
                 }
 
-                ultimoQtdVerde = 0
-                quadrosSumidoVerde++
-                val distRefAtual = if (ultimaDistVerde >= 0f) ultimaDistVerde else menorDistVerde
+                estadoPino.ultimoQtdVerde = 0
+                estadoPino.quadrosSumidoVerde++
+                val distRefAtual = if (estadoPino.ultimaDistVerde >= 0f) estadoPino.ultimaDistVerde else estadoPino.menorDistVerde
                 val pertoDaCruz = distRefAtual >= 0f &&
                     distRefAtual <= toleranciaChegada * 2.0f &&
-                    (menorDistVerde < 0f || distRefAtual <= menorDistVerde * 1.25f)
+                    (estadoPino.menorDistVerde < 0f || distRefAtual <= estadoPino.menorDistVerde * 1.25f)
 
-                val confirmadoSumido = if (vistoVerde && verdeVeioDeTemplate && pertoDaCruz && quadrosSumidoVerde < 6) {
-                    chegouNoPino(distRefAtual, estadoMini, tempoParadoMs, vistoVerde, verdeVeioDeTemplate)
+                val confirmadoSumido = if (estadoPino.vistoVerde && estadoPino.verdeVeioDeTemplate && pertoDaCruz && estadoPino.quadrosSumidoVerde < 6) {
+                    chegouNoPino(distRefAtual, estadoMini, tempoParadoMs, estadoPino.vistoVerde, estadoPino.verdeVeioDeTemplate)
                 } else {
-                    quadrosChegada = 0
+                    estadoPino.quadrosChegada = 0
                     false
                 }
                 if (confirmadoSumido) {
-                    val rgbRef = ultimoRgbVerde
+                    val rgbRef = estadoPino.ultimoRgbVerde
                     ultimoConfirmado = alvo
                     proximoPino(agora, "CHEGADA_CONFIRMADA", context, tela)
                     return formatarLog(
-                        "CHEGOU", indice, melhorScore, 0, rgbRef, distRefAtual, semProgresso,
+                        "CHEGOU", indice, melhorScore, 0, rgbRef, distRefAtual, estadoPino.semProgresso,
                         "CHEGOU motivo=confirmada sob a cruz"
                     )
                 }
 
                 if (!estadoMini.emMovimento && tempoParadoMs >= Cal.TEMPO_PARADO_RECLIQUE_MS && (agora - ultimoClique >= intervaloCliqueMs)) {
-                    val posReclique = ultimoPosPinoConhecidaRel
+                    val posReclique = estadoPino.ultimoPosPinoConhecidaRel
                     if (posReclique != null) {
                         val px = (x0 + posReclique.first).toFloat().coerceIn(minToqueX(tela), maxToqueX(tela))
                         val py = (y0 + posReclique.second).toFloat().coerceIn(minToqueY(tela), maxToqueY(tela))
@@ -2217,21 +2148,21 @@ if (!gestoItem.first) {
                         ultimoClique = agora
                         val logReclique = anexarTempoPosLuta("CLIQUE ${toque.first.toInt()},${toque.second.toInt()}", agora)
                         return formatarLog(
-                            fase.name, indice, melhorScore, 0, ultimoRgbVerde, distRefAtual, semProgresso,
+                            fase.name, indice, melhorScore, 0, estadoPino.ultimoRgbVerde, distRefAtual, estadoPino.semProgresso,
                             "reclique sem avancar alvo | $logReclique"
                         )
                     }
                 }
 
-                if (!estadoMini.emMovimento && quadrosSumidoVerde >= 6) {
-                    quadrosSumidoVerde = 0
+                if (!estadoMini.emMovimento && estadoPino.quadrosSumidoVerde >= 6) {
+                    estadoPino.quadrosSumidoVerde = 0
                     return executarEscadaRecuperacaoPino(
                         tela, x0, y0, x1, y1, cx, cy, toleranciaChegada, agora, context, tocar, modelo
                     )
                 }
 
                 return formatarLog(
-                    fase.name, indice, melhorScore, 0, ultimoRgbVerde, ultimaDistVerde, semProgresso, "aguardando verde"
+                    fase.name, indice, melhorScore, 0, estadoPino.ultimoRgbVerde, estadoPino.ultimaDistVerde, estadoPino.semProgresso, "aguardando verde"
                 )
             }
         }
@@ -2258,13 +2189,13 @@ if (!gestoItem.first) {
                     val toque = dispararToqueSeguro(tela.width, tela.height, px, py, tocar)
                     ultimoClique = agora
                     iniciarCaminhada(verde.posicao, distVerde, agora, veioDeTemplate = true)
-                    vistoVerde = true
-                    ultimoQtdVerde = verde.quantidade
-                    ultimoRgbVerde = verde.rgbMedio
+                    estadoPino.vistoVerde = true
+                    estadoPino.ultimoQtdVerde = verde.quantidade
+                    estadoPino.ultimoRgbVerde = verde.rgbMedio
                     val logToque = anexarTempoPosLuta("CLIQUE ${toque.first.toInt()},${toque.second.toInt()}", agora)
                     return formatarLog(
                         fase.name, indice, avaliacao.scoreAlvo, verde.quantidade, verde.rgbMedio,
-                        distVerde, semProgresso, "pino verde template | $rivalInfo | $logToque"
+                        distVerde, estadoPino.semProgresso, "pino verde template | $rivalInfo | $logToque"
                     )
                 }
             }
@@ -2288,19 +2219,19 @@ if (!gestoItem.first) {
         }
 
         if (achado == null) {
-            quadrosPertoDaCruz = 0
-            val candidatoPos = candidatoConsistente
+            estadoPino.quadrosPertoDaCruz = 0
+            val candidatoPos = estadoPino.candidatoConsistente
             if (scoreAtual >= 0.90 && candidatoPos != null) {
-                quadrosQuaseLimiar++
+                estadoPino.quadrosQuaseLimiar++
             } else {
-                quadrosQuaseLimiar = 0
-                candidatoConsistente = null
+                estadoPino.quadrosQuaseLimiar = 0
+                estadoPino.candidatoConsistente = null
             }
 
-            if (quadrosQuaseLimiar >= 5 && candidatoPos != null) {
-                quadrosQuaseLimiar = 0
-                ultimoCandidatoQuaseLimiar = null
-                candidatoConsistente = null
+            if (estadoPino.quadrosQuaseLimiar >= 5 && candidatoPos != null) {
+                estadoPino.quadrosQuaseLimiar = 0
+                estadoPino.ultimoCandidatoQuaseLimiar = null
+                estadoPino.candidatoConsistente = null
                 val distFb = hypot((candidatoPos.first - cx).toDouble(), (candidatoPos.second - cy).toDouble()).toFloat()
                 if (distFb > toleranciaChegada && agora - ultimoClique >= intervaloCliqueMs) {
                     val px = candidatoPos.first.toFloat().coerceIn(minToqueXVal, maxToqueXVal)
@@ -2313,13 +2244,13 @@ if (!gestoItem.first) {
                     val sentidoStr = if (direcaoIda) "IDA" else "VOLTA"
                     val logToque = anexarTempoPosLuta("CLIQUE ${toque.first.toInt()},${toque.second.toInt()}", agora)
                     return formatarLog(
-                        fase.name, indice, scoreAtual, 0, ultimoRgbVerde, distFb, semProgresso,
+                        fase.name, indice, scoreAtual, 0, estadoPino.ultimoRgbVerde, distFb, estadoPino.semProgresso,
                         "$sentidoStr | $rivalLog | $logToque (fallback score - sem avancar alvo)"
                     )
                 }
             }
 
-            val refCandidato = ultimoCandidatoQuaseLimiar
+            val refCandidato = estadoPino.ultimoCandidatoQuaseLimiar
             if (refCandidato != null && scoreAtual >= 0.45) {
                 val verdeNoMapa = acharPinoVerdeProximo(tela, x0, y0, x1, y1, refCandidato, cx, cy, toleranciaChegada)
                 if (verdeNoMapa != null) {
@@ -2336,48 +2267,48 @@ if (!gestoItem.first) {
                         )
                         ultimoClique = agora
                         iniciarCaminhada(verdeRel, distVerde, agora, veioDeTemplate = false)
-                        vistoVerde = true
-                        ultimoQtdVerde = verdeNoMapa.quantidade
-                        ultimoRgbVerde = verdeNoMapa.rgbMedio
+                        estadoPino.vistoVerde = true
+                        estadoPino.ultimoQtdVerde = verdeNoMapa.quantidade
+                        estadoPino.ultimoRgbVerde = verdeNoMapa.rgbMedio
                         val sentidoStr = if (direcaoIda) "IDA" else "VOLTA"
                         val logToque = anexarTempoPosLuta("CLIQUE ${toque.first.toInt()},${toque.second.toInt()}", agora)
                         return formatarLog(
                             fase.name, indice, scoreAtual, verdeNoMapa.quantidade, verdeNoMapa.rgbMedio,
-                            distVerde, semProgresso, "$sentidoStr | $rivalLog | $logToque (verde validado candidato)"
+                            distVerde, estadoPino.semProgresso, "$sentidoStr | $rivalLog | $logToque (verde validado candidato)"
                         )
                     }
                 }
             }
 
-            naoVisto++
-            if (!estadoMini.emMovimento && naoVisto >= Cal.NAO_VISTO_LIMITE) {
-                naoVisto = 0
+            estadoPino.naoVisto++
+            if (!estadoMini.emMovimento && estadoPino.naoVisto >= Cal.NAO_VISTO_LIMITE) {
+                estadoPino.naoVisto = 0
                 return executarEscadaRecuperacaoPino(
                     tela, x0, y0, x1, y1, cx, cy, toleranciaChegada, agora, context, tocar, modelo
                 )
             }
             return formatarLog(
-                fase.name, indice, scoreAtual, 0, ultimoRgbVerde, -1f, semProgresso, "procurando | $rivalLog"
+                fase.name, indice, scoreAtual, 0, estadoPino.ultimoRgbVerde, -1f, estadoPino.semProgresso, "procurando | $rivalLog"
             )
         }
 
-        naoVisto = 0
-        quadrosQuaseLimiar = 0
-        ultimoCandidatoQuaseLimiar = null
-        candidatoConsistente = null
-        ultimoPosPinoConhecidaRel = Pair(achado.first - x0, achado.second - y0)
-        ultimoPosPinoEraVerde = false
+        estadoPino.naoVisto = 0
+        estadoPino.quadrosQuaseLimiar = 0
+        estadoPino.ultimoCandidatoQuaseLimiar = null
+        estadoPino.candidatoConsistente = null
+        estadoPino.ultimoPosPinoConhecidaRel = Pair(achado.first - x0, achado.second - y0)
+        estadoPino.ultimoPosPinoEraVerde = false
         val dist = hypot((achado.first - cx).toDouble(), (achado.second - cy).toDouble()).toFloat()
 
         if (dist <= toleranciaChegada) {
-            quadrosPertoDaCruz++
+            estadoPino.quadrosPertoDaCruz++
             val chegouPertoCruz = chegouNoPino(dist, estadoMini, tempoParadoMs, true, true)
-            if (quadrosPertoDaCruz >= 3 && chegouPertoCruz) {
-                quadrosPertoDaCruz = 0
+            if (estadoPino.quadrosPertoDaCruz >= 3 && chegouPertoCruz) {
+                estadoPino.quadrosPertoDaCruz = 0
                 ultimoConfirmado = alvo
                 proximoPino(agora, "CHEGADA_CONFIRMADA", context, tela)
                 return formatarLog(
-                    "CHEGOU", indice, scoreAtual, 0, ultimoRgbVerde, dist, semProgresso,
+                    "CHEGOU", indice, scoreAtual, 0, estadoPino.ultimoRgbVerde, dist, estadoPino.semProgresso,
                     "CHEGOU motivo=confirmada perto da cruz | $rivalLog"
                 )
             }
@@ -2388,16 +2319,16 @@ if (!gestoItem.first) {
                 ultimoClique = agora
                 val logToque = anexarTempoPosLuta("CLIQUE ${toque.first.toInt()},${toque.second.toInt()}", agora)
                 return formatarLog(
-                    fase.name, indice, scoreAtual, 0, ultimoRgbVerde, dist, semProgresso,
+                    fase.name, indice, scoreAtual, 0, estadoPino.ultimoRgbVerde, dist, estadoPino.semProgresso,
                     "perto da cruz reclique sem avancar | $rivalLog | $logToque"
                 )
             }
             return formatarLog(
-                fase.name, indice, scoreAtual, 0, ultimoRgbVerde, dist, semProgresso, "ignorado perto da cruz | $rivalLog"
+                fase.name, indice, scoreAtual, 0, estadoPino.ultimoRgbVerde, dist, estadoPino.semProgresso, "ignorado perto da cruz | $rivalLog"
             )
         }
 
-        quadrosPertoDaCruz = 0
+        estadoPino.quadrosPertoDaCruz = 0
 
         var logClique: String? = null
         if (agora - ultimoClique >= intervaloCliqueMs) {
@@ -2415,7 +2346,7 @@ if (!gestoItem.first) {
         val sentidoStr = if (direcaoIda) "IDA" else "VOLTA"
         val extra = if (logClique != null) "$sentidoStr | $rivalLog | $logClique" else "$sentidoStr | $rivalLog"
         return formatarLog(
-            fase.name, indice, scoreAtual, 0, ultimoRgbVerde, dist, semProgresso, extra
+            fase.name, indice, scoreAtual, 0, estadoPino.ultimoRgbVerde, dist, estadoPino.semProgresso, extra
         )
     }
 
@@ -2435,15 +2366,15 @@ if (!gestoItem.first) {
         cy: Float
     ): Pair<Pair<Int, Int>?, Double> {
         val melhorScoreAnterior = melhorScore
-        val ultimoCandidatoAnterior = ultimoCandidatoQuaseLimiar
-        val candidatoConsistenteAnterior = candidatoConsistente
+        val ultimoCandidatoAnterior = estadoPino.ultimoCandidatoQuaseLimiar
+        val estadoPino.candidatoConsistenteAnterior = estadoPino.candidatoConsistente
         return try {
             val posicao = acharPorTemplate(tela, x0, y0, x1, y1, modelo, cx, cy)
             Pair(posicao, melhorScore)
         } finally {
             melhorScore = melhorScoreAnterior
-            ultimoCandidatoQuaseLimiar = ultimoCandidatoAnterior
-            candidatoConsistente = candidatoConsistenteAnterior
+            estadoPino.ultimoCandidatoQuaseLimiar = ultimoCandidatoAnterior
+            estadoPino.candidatoConsistente = estadoPino.candidatoConsistenteAnterior
         }
     }
 
@@ -2560,10 +2491,10 @@ if (!gestoItem.first) {
         estadoPino.reiniciar(preservarFalhas = false)
         if (posicaoConfirmada != null && origemVerde) {
             val posRel = Pair(posicaoConfirmada.first - x0, posicaoConfirmada.second - y0)
-            ultimoPosPinoConhecidaRel = posRel
-            ultimoPosPinoEraVerde = true
-            ultimoVerdeRel = posRel
-            vistoVerde = true
+            estadoPino.ultimoPosPinoConhecidaRel = posRel
+            estadoPino.ultimoPosPinoEraVerde = true
+            estadoPino.ultimoVerdeRel = posRel
+            estadoPino.vistoVerde = true
         }
         fase = FaseNavegacao.ESCOLHER
         timestampsResync.addLast(agora)
@@ -3101,8 +3032,8 @@ if (!gestoItem.first) {
             m.pixelsValidos < 8
         ) {
             melhorScore = 0.0
-            ultimoCandidatoQuaseLimiar = null
-            candidatoConsistente = null
+            estadoPino.ultimoCandidatoQuaseLimiar = null
+            estadoPino.candidatoConsistente = null
             return null
         }
 
@@ -3207,7 +3138,7 @@ if (!gestoItem.first) {
         )
 
         if (melhor >= 0.48) {
-            val anterior = ultimoCandidatoQuaseLimiar
+            val anterior = estadoPino.ultimoCandidatoQuaseLimiar
             if (anterior != null) {
                 val deslocamento = hypot(
                     (centroCandidato.first - anterior.first).toDouble(),
@@ -3215,20 +3146,20 @@ if (!gestoItem.first) {
                 )
                 val maxDesloc = max(6.0, m.w * 0.35)
                 if (deslocamento <= maxDesloc) {
-                    candidatoConsistente = Pair(
+                    estadoPino.candidatoConsistente = Pair(
                         (anterior.first + centroCandidato.first) / 2,
                         (anterior.second + centroCandidato.second) / 2
                     )
                 } else {
-                    candidatoConsistente = null
+                    estadoPino.candidatoConsistente = null
                 }
             } else {
-                candidatoConsistente = null
+                estadoPino.candidatoConsistente = null
             }
-            ultimoCandidatoQuaseLimiar = centroCandidato
+            estadoPino.ultimoCandidatoQuaseLimiar = centroCandidato
         } else {
-            ultimoCandidatoQuaseLimiar = null
-            candidatoConsistente = null
+            estadoPino.ultimoCandidatoQuaseLimiar = null
+            estadoPino.candidatoConsistente = null
         }
 
         if (melhor >= Cal.LIMIAR) {
