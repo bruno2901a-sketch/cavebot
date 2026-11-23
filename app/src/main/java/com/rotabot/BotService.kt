@@ -328,6 +328,8 @@ class BotService : Service() {
             if (pausaManual) return
             if (SystemClock.uptimeMillis() - toqueDesde < 8000L) return
             ultimoToque = "Gesto sem retorno após 8s; rota pausada. Aguardando Android liberar toque"
+            // Trata a pausa de segurança como pausa manual para congelar os temporizadores da rota.
+            Rota.iniciarPausaManual()
             pausaManual = true
             EstadoBotController.definir(EstadoBot.PAUSADO)
             Rota.cancelarAutoloot = true
