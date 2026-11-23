@@ -1640,7 +1640,7 @@ if (!gestoItem.first) {
         context: Context,
         tocar: (Float, Float) -> Unit,
         modelo: Modelo
-    ): String? {
+    ): String {
         val minToqueX = 28f.coerceAtMost((tela.width - 1).toFloat())
         val maxToqueX = (tela.width * 0.985f - 20f).coerceAtLeast(minToqueX)
         val minToqueY = 28f.coerceAtMost((tela.height - 1).toFloat())
@@ -1962,13 +1962,10 @@ if (!gestoItem.first) {
             }
 
             if (iniciouCaminhadaEm > 0L && (agora - iniciouCaminhadaEm) >= tempoMaxPinoMs) {
-                val recMsg = executarEscadaRecuperacaoPino(
+                iniciouCaminhadaEm = agora
+                return executarEscadaRecuperacaoPino(
                     tela, x0, y0, x1, y1, cx, cy, toleranciaChegada, agora, context, tocar, modelo
                 )
-                if (recMsg != null) {
-                    iniciouCaminhadaEm = agora
-                    return recMsg
-                }
             }
 
             val janelaTripla = retomarVerdeAte > 0L && agora <= retomarVerdeAte
@@ -2031,18 +2028,10 @@ if (!gestoItem.first) {
                 ultimaDist = dist
 
                 if (!estadoMini.emMovimento && (semProgresso >= 6 || cliquesVerde >= 12)) {
-                    val recMsg = executarEscadaRecuperacaoPino(
+                    semProgresso = 0
+                    cliquesVerde = 0
+                    return executarEscadaRecuperacaoPino(
                         tela, x0, y0, x1, y1, cx, cy, toleranciaChegada, agora, context, tocar, modelo
-                    )
-                    if (recMsg != null) {
-                        semProgresso = 0
-                        cliquesVerde = 0
-                        return recMsg
-                    }
-                    val progressoAntesReset = semProgresso
-                    return registrarFalhaPino(
-                        agora, fase.name, indice, melhorScore, qtdVerde, rgbVerde,
-                        dist, progressoAntesReset, "sem progresso - reescolhendo", context, tela
                     )
                 }
 
@@ -2102,16 +2091,9 @@ if (!gestoItem.first) {
                 }
 
                 if (!estadoMini.emMovimento && quadrosSumidoVerde >= 6) {
-                    val recMsg = executarEscadaRecuperacaoPino(
+                    quadrosSumidoVerde = 0
+                    return executarEscadaRecuperacaoPino(
                         tela, x0, y0, x1, y1, cx, cy, toleranciaChegada, agora, context, tocar, modelo
-                    )
-                    if (recMsg != null) {
-                        quadrosSumidoVerde = 0
-                        return recMsg
-                    }
-                    return registrarFalhaPino(
-                        agora, fase.name, indice, melhorScore, 0, ultimoRgbVerde,
-                        ultimaDistVerde, semProgresso, "verde sumiu - reescolhendo", context, tela
                     )
                 }
 
@@ -2194,7 +2176,7 @@ if (!gestoItem.first) {
                         tela.width, tela.height, px, py, tocar
                     )
                     ultimoClique = agora
-                    iniciarCaminhada(Pair(candidatoPos.first - x0, candidatoPos.second - y0), distFb, agora, veioDeTemplate = true)
+                    iniciarCaminhada(Pair(candidatoPos.first - x0, candidatoPos.second - y0), distFb, agora, veioDeTemplate = false)
                     val sentidoStr = if (direcaoIda) "IDA" else "VOLTA"
                     val logToque = anexarTempoPosLuta("CLIQUE ${toque.first.toInt()},${toque.second.toInt()}", agora)
                     return formatarLog(
@@ -2220,7 +2202,7 @@ if (!gestoItem.first) {
                             tela.width, tela.height, px, py, tocar
                         )
                         ultimoClique = agora
-                        iniciarCaminhada(verdeRel, distVerde, agora, veioDeTemplate = true)
+                        iniciarCaminhada(verdeRel, distVerde, agora, veioDeTemplate = false)
                         vistoVerde = true
                         ultimoQtdVerde = verdeNoMapa.quantidade
                         ultimoRgbVerde = verdeNoMapa.rgbMedio
@@ -2236,16 +2218,9 @@ if (!gestoItem.first) {
 
             naoVisto++
             if (!estadoMini.emMovimento && naoVisto >= Cal.NAO_VISTO_LIMITE) {
-                val recMsg = executarEscadaRecuperacaoPino(
-                    tela, x0, y0, x1, y1, cx, cy, toleranciaChegada, agora, context, tocar, modelo
-                )
                 naoVisto = 0
-                if (recMsg != null) {
-                    return recMsg
-                }
-                return registrarFalhaPino(
-                    agora, fase.name, indice, scoreAtual, 0, ultimoRgbVerde,
-                    -1f, semProgresso, "nao localizado | $rivalLog", context, tela
+                return executarEscadaRecuperacaoPino(
+                    tela, x0, y0, x1, y1, cx, cy, toleranciaChegada, agora, context, tocar, modelo
                 )
             }
             return formatarLog(
