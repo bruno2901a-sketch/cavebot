@@ -1360,8 +1360,8 @@ if (!gestoItem.first) {
         if (bw > 16 && bh > 12) {
             val pxBusca = IntArray(bw * bh)
             tela.getPixels(pxBusca, 0, bw, buscaX0, buscaY0, bw, bh)
-            val faixaH = 16.coerceAtMost(bh)
-            val faixaW = 90.coerceAtMost(bw)
+            val faixaH = (16f * escalaBusca).toInt().coerceAtLeast(6).coerceAtMost(bh)
+            val faixaW = (90f * escalaBusca).toInt().coerceAtLeast(32).coerceAtMost(bw)
             var melhorLinhaClaros = 0
             var melhorYRel = -1
             var melhorXRel = 0
@@ -1385,11 +1385,11 @@ if (!gestoItem.first) {
                         melhorXRel = xx
                         melhorYRel = yy
                     }
-                    xx += 8
+                    xx += (16f * escalaBusca).toInt().coerceAtLeast(8)
                 }
-                yy += 4
+                yy += (8f * escalaBusca).toInt().coerceAtLeast(4)
             }
-            if (melhorLinhaClaros >= (24f * escalaBusca).toInt().coerceAtLeast(8) && melhorYRel >= 0) {
+            if (melhorLinhaClaros >= (24f * escalaBusca * escalaBusca).toInt().coerceAtLeast(6) && melhorYRel >= 0) {
                 val ax = buscaX0 + melhorXRel
                 val ay = buscaY0 + melhorYRel
                 val aw = faixaW
