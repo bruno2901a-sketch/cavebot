@@ -107,6 +107,9 @@ object Rota {
     var cancelarAutoloot = false
 
     @Volatile
+    var modoCircular = false
+
+    @Volatile
     var intervaloCliqueMs: Long = 700L
 
     @Volatile
@@ -555,6 +558,9 @@ object Rota {
         } else if (direcaoIda) {
             if (alvo < tamanho - 1) {
                 alvo++
+            } else if (modoCircular) {
+                alvo = 0
+                direcaoIda = true
             } else {
                 direcaoIda = false
                 alvo = (tamanho - 2).coerceAtLeast(0)
