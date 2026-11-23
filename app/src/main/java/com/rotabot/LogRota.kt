@@ -38,6 +38,8 @@ object LogRota {
     private var ultimaAssinatura: String? = null
     private var avisouErroGravacao = false
 
+    @Volatile var salvarPrints: Boolean = true
+
     fun init(context: Context) {
         appContext = context.applicationContext
         diretorioBase(appContext!!)
@@ -156,7 +158,7 @@ object LogRota {
         ultimaAssinatura = assinatura
 
         val motivo = motivoFalha(mensagem)
-        val copiaTela = if (motivo != null && tela != null && !tela.isRecycled) {
+        val copiaTela = if (salvarPrints && motivo != null && tela != null && !tela.isRecycled) {
             try {
                 tela.copy(tela.config ?: Bitmap.Config.ARGB_8888, false)
             } catch (ex: Exception) {
@@ -207,7 +209,7 @@ object LogRota {
     }
 
     fun salvarQuadroDiagnostico(context: Context, tagEvento: String, tela: Bitmap?) {
-        if (tela == null || tela.isRecycled) return
+        if (!salvarPrints || tela == null || tela.isRecycled) return
         val ctx = context.applicationContext
         appContext = ctx
         val copia = try {
