@@ -568,8 +568,6 @@ object Rota {
         val manterVoltou = motivoAvanco != "CHEGADA_CONFIRMADA" && estadoPino.voltouAoPinoAnteriorParaTentar
         estadoPino.reiniciar(preservarFalhas = false)
         if (manterVoltou) estadoPino.voltouAoPinoAnteriorParaTentar = true
-        quadrosSemRotaSeguidos = 0
-        ignorarSemRotaAte = 0L
         estavaEmLutaCaminhando = false
         verdeRelAntesDaLuta = null
         indiceCliqueVariavel = 0
@@ -607,7 +605,6 @@ object Rota {
 
         fase = FaseNavegacao.ESCOLHER
         estadoPino.reiniciar(preservarFalhas = true)
-        quadrosSemRota = 0
         return formatarLog(
             faseNome, pinoId, score, qtdVerde, rgbVerde, distPx, progressoAntesReset,
             "$motivo (falhas=$falhasPino/${Cal.MAX_FALHAS_PINO})"
