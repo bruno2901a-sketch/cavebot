@@ -363,21 +363,7 @@ object LogRota {
             }
 
             // A janela é calculada em relação ao relógio atual, não à última linha gravada.
-            val msReferencia = System.currentTimeMillis()
-            for (arq in arquivosLog) {
-                try {
-                    arq.bufferedReader(Charsets.UTF_8).useLines { seq ->
-                        seq.forEach { linha ->
-                            val parsed = parsearHoraMs(linha)
-                            if (parsed != null) {
-                                msReferencia = parsed
-                            }
-                        }
-                    }
-                } catch (_: Exception) {}
-            }
-
-            val refMs = msReferencia
+            val refMs = System.currentTimeMillis()
 
             try {
                 val arq15 = File(baseDir, "rotabot_log_ultimos15min.txt")
