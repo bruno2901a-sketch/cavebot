@@ -304,8 +304,14 @@ class BotService : Service() {
 
     private fun executarCiclo() {
         if (processando) {
-            if (SystemClock.uptimeMillis() - toqueDesde < 3000L) return
+            if (SystemClock.uptimeMillis() - toqueDesde < 8000L) return
             processando = false
+            ultimoToque = "Gesto sem retorno após 8s; rota pausada por segurança"
+            pausaManual = true
+            Rota.cancelarAutoloot = true
+            registrarStatus(ultimoToque)
+            LogRota.registrarPasso(this, ultimoToque, ultimoFrameLog)
+            return
         }
         ajustarRotacao()
         val agora = SystemClock.uptimeMillis()
