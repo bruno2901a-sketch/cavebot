@@ -341,17 +341,10 @@ class BotService : Service() {
         val agora = SystemClock.uptimeMillis()
         val frame = copiarImagemAtual()
         if (frame == null) {
+            // Uma tela estática pode não produzir imagem nova; não reinicia a projeção em loop.
             if (!pausaManual && ultimoFrameEm > 0L && agora - ultimoFrameEm > 3000L) {
                 val segsSemImagem = (agora - ultimoFrameEm) / 1000L
-                registrarStatus("SEM IMAGEM há ${segsSemImagem}s - recriando captura")
-                if (agora - ultimaRecriacaoCapturaEm >= 5000L) {
-                    ultimaRecriacaoCapturaEm = agora
-                    val m = DisplayMetrics()
-                    @Suppress("DEPRECATION")
-                    (getSystemService(WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealMetrics(m)
-                    recriarLeitorCaptura(m)
-                    registrarLogCaptura("SEM IMAGEM há ${segsSemImagem}s - recriando captura (${m.widthPixels}x${m.heightPixels})")
-                }
+                registrarStatus("SEM IMAGEM há ${segsSemImagem}s - aguardando novo quadro")
             }
             return
         }
@@ -386,11 +379,15 @@ class BotService : Service() {
         if (processando) return
         processando = true
         toqueDesde = SystemClock.uptimeMillis()
-        val aceito = ToqueService.clicar(x, y) { _, msg ->
-            ultimoToque = msg
+        ultimoToque = ""
+        val aceito = ToqueService.clicar(x, y) { ok, msg ->
+            ultimoToque = if (ok) "" else msg
             processando = false
         }
-        if (!aceito) { processando = false }
+        if (!aceito) {
+            processando = false
+            ultimoToque = "Toque recusado: serviço de acessibilidade ocupado ou indisponível"
+        }
     }
 
     private fun extrairNumeroPino(texto: String): String {
