@@ -21,6 +21,9 @@ android {
     }
 
     kotlinOptions { jvmTarget = "17" }
+
+    // Gera BuildConfig.VERSION_NAME (usado na linha "VERSAO Rota ..." do log); no AGP 8.x vem desligado por padrão.
+    buildFeatures { buildConfig = true }
 }
 
 dependencies {

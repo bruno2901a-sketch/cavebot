@@ -32,6 +32,7 @@ import android.view.WindowManager
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Toast
 import androidx.core.app.NotificationCompat
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -64,41 +65,95 @@ class BotService : Service() {
         private const val NOTIFICACAO_ID = 71
         private const val INTERVALO_CICLO_MS = 450L
 
+        private const val REUSO_QUADRO_MS = 3000L
+        private const val RECRIAR_CAPTURA_SEM_FRAME_MS = 10000L
+        private const val ESPERA_NOVA_TENTATIVA_ALARME_MS = 5000L
+
         private var mediaPlayer: MediaPlayer? = null
+        private val alarmeLock = Any()
+        @Volatile private var proximaTentativaAlarmeEm = 0L
+
+        private fun candidatosAlarme(uriStr: String): List<Uri> {
+            val lista = ArrayList<Uri>()
+            if (uriStr.isNotEmpty() && uriStr != "alarme_pino") {
+                try { lista.add(Uri.parse(uriStr)) } catch (_: Exception) {}
+            }
+            RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)?.let { lista.add(it) }
+            RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)?.let { lista.add(it) }
+            RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)?.let { lista.add(it) }
+            return lista
+        }
+
+        private fun criarPlayerAlarme(ctx: Context, uri: Uri): MediaPlayer? {
+            val mp = MediaPlayer()
+            return try {
+                mp.setDataSource(ctx, uri)
+                mp.setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+                mp.isLooping = true
+                mp.prepare()
+                mp
+            } catch (_: Exception) {
+                try { mp.release() } catch (_: Exception) {}
+                null
+            }
+        }
+
+        // Chamar somente com alarmeLock em posse.
+        private fun liberarPlayerAlarmeLocked() {
+            val mp = mediaPlayer ?: return
+            mediaPlayer = null
+            try { if (mp.isPlaying) mp.stop() } catch (_: Exception) {}
+            try { mp.release() } catch (_: Exception) {}
+        }
 
         fun tocarAlarme(ctx: Context, uriStr: String, volumeProgresso: Int) {
             try {
-                if (mediaPlayer == null) {
-                    val uri = if (uriStr.isNotEmpty() && uriStr != "alarme_pino") Uri.parse(uriStr) else RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-                    mediaPlayer = MediaPlayer().apply {
-                        setDataSource(ctx, uri)
-                        setAudioAttributes(
-                            AudioAttributes.Builder()
-                                .setUsage(AudioAttributes.USAGE_ALARM)
-                                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                                .build()
-                        )
-                        isLooping = true
-                        prepare()
+                val existe = synchronized(alarmeLock) { mediaPlayer != null }
+                if (!existe) {
+                    val agora = SystemClock.uptimeMillis()
+                    if (agora < proximaTentativaAlarmeEm) return
+                    // prepare() fica fora do lock para não travar pararAlarme() da thread principal.
+                    val appCtx = ctx.applicationContext
+                    val novo = candidatosAlarme(uriStr).firstNotNullOfOrNull { criarPlayerAlarme(appCtx, it) }
+                    if (novo == null) {
+                        proximaTentativaAlarmeEm = agora + ESPERA_NOVA_TENTATIVA_ALARME_MS
+                        return
+                    }
+                    val adotado = synchronized(alarmeLock) {
+                        if (mediaPlayer == null) {
+                            mediaPlayer = novo
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                    if (!adotado) {
+                        try { novo.release() } catch (_: Exception) {}
                     }
                 }
-                val vol = (volumeProgresso.coerceIn(0, 100) / 100f)
-                mediaPlayer?.setVolume(vol, vol)
-
-                if (mediaPlayer?.isPlaying == false) {
-                    mediaPlayer?.start()
+                synchronized(alarmeLock) {
+                    val mp = mediaPlayer ?: return
+                    val vol = (volumeProgresso.coerceIn(0, 100) / 100f)
+                    mp.setVolume(vol, vol)
+                    if (!mp.isPlaying) {
+                        mp.start()
+                    }
                 }
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+                synchronized(alarmeLock) { liberarPlayerAlarmeLocked() }
+            }
         }
 
         fun pararAlarme() {
-            try {
-                mediaPlayer?.let {
-                    if (it.isPlaying) it.stop()
-                    it.release()
-                }
-                mediaPlayer = null
-            } catch (_: Exception) {}
+            synchronized(alarmeLock) {
+                liberarPlayerAlarmeLocked()
+            }
+            proximaTentativaAlarmeEm = 0L
         }
     }
 
@@ -113,6 +168,12 @@ class BotService : Service() {
     private var overlay: LinearLayout? = null
     private var statusView: TextView? = null
     private var contadorView: TextView? = null
+    private var botaoPrincipal: Button? = null
+    @Volatile private var pausaPinoPerdido = false
+    // Incrementado (só na thread principal) a cada retomada pedida pelo usuário. Um passo que já estava em andamento
+    // quando o usuário retomou pode devolver o texto antigo "PAUSADO_POR_PINO_PERDIDO"; sem este contador ele
+    // reativaria a pausa e o botão voltaria a "Retomar" com a rota já andando.
+    @Volatile private var geracaoRetomada = 0
     @Volatile private var alarmeSegAtual = 30
     @Volatile private var statusAtual = "Aguardando início"
     @Volatile private var rodando = false
@@ -123,7 +184,7 @@ class BotService : Service() {
     @Volatile private var ultimoToque = ""
     @Volatile private var ultimoFrameEm = 0L
     @Volatile private var ultimaRecriacaoCapturaEm = 0L
-    private var ultimoFrameLog: Bitmap? = null
+    @Volatile private var ultimoFrameLog: Bitmap? = null
     private var inicio = 1
     private var fim = 5
     private var usaLoot = false
@@ -165,9 +226,12 @@ class BotService : Service() {
             ACAO_RETOMAR -> {
                 Rota.cancelarAutoloot = false
                 pausaManual = false
+                pausaPinoPerdido = false
                 EstadoBotController.definir(if (rodando) EstadoBot.NAVEGANDO else EstadoBot.PRONTO)
+                geracaoRetomada++
                 Rota.retomarPausaPinoPerdido()
                 BotService.pararAlarme()
+                atualizarBotaoPrincipal()
             }
             ACAO_PARAR -> {
                 Rota.cancelarAutoloot = true
@@ -256,14 +320,22 @@ class BotService : Service() {
         (getSystemService(WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealMetrics(metrics)
 
         val manager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        projection = manager.getMediaProjection(resultCode, data)
-        projection?.registerCallback(projectionCallback, workerHandler)
-        synchronized(capturaLock) {
-            imageReader = ImageReader.newInstance(metrics.widthPixels, metrics.heightPixels, PixelFormat.RGBA_8888, 2)
-            virtualDisplay = projection?.createVirtualDisplay(
-                "RotaBotScreenCapture", metrics.widthPixels, metrics.heightPixels, metrics.densityDpi,
-                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, imageReader?.surface, null, workerHandler
-            )
+        try {
+            val novaProjecao = manager.getMediaProjection(resultCode, data)
+                ?: throw IllegalStateException("MediaProjection nula")
+            projection = novaProjecao
+            novaProjecao.registerCallback(projectionCallback, workerHandler)
+            synchronized(capturaLock) {
+                val leitor = ImageReader.newInstance(metrics.widthPixels, metrics.heightPixels, PixelFormat.RGBA_8888, 2)
+                imageReader = leitor
+                virtualDisplay = novaProjecao.createVirtualDisplay(
+                    "RotaBotScreenCapture", metrics.widthPixels, metrics.heightPixels, metrics.densityDpi,
+                    DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR, leitor.surface, null, workerHandler
+                ) ?: throw IllegalStateException("VirtualDisplay nulo")
+            }
+        } catch (e: Exception) {
+            falharCaptura("Falha ao iniciar a captura", e)
+            return
         }
         try {
             Rota.carregar(this, inicio, fim, maxOf(metrics.widthPixels, metrics.heightPixels))
@@ -276,12 +348,55 @@ class BotService : Service() {
         rodando = false
         rotaIniciada = false
         pausaManual = false
+        pausaPinoPerdido = false
         processando = false
         ultimoToque = ""
         ultimoFrameEm = 0L
         ultimaRecriacaoCapturaEm = 0L
         EstadoBotController.definir(EstadoBot.PRONTO)
         criarOverlay()
+    }
+
+    private fun mostrarToast(msg: String) {
+        handler.post {
+            try { Toast.makeText(applicationContext, msg, Toast.LENGTH_LONG).show() } catch (_: Exception) {}
+        }
+    }
+
+    private fun falharCaptura(titulo: String, e: Exception) {
+        val detalhe = e.message?.let { " - $it" } ?: ""
+        val msg = "$titulo: ${e.javaClass.simpleName}$detalhe"
+        try { RelatorioErro.registrar(this, msg, e) } catch (_: Exception) {}
+        EstadoBotController.definir(EstadoBot.ERRO)
+        mostrarToast(msg)
+        pararTudo(msg)
+    }
+
+    // Cópia própria do último quadro real, para reaproveitar quando o leitor não entrega quadro novo.
+    private fun copiaDoUltimoQuadro(): Bitmap? {
+        val base = ultimoFrameLog ?: return null
+        return try {
+            val leitor = imageReader
+            if (base.isRecycled) {
+                null
+            } else if (leitor != null && (base.width != leitor.width || base.height != leitor.height)) {
+                null
+            } else {
+                base.copy(Bitmap.Config.ARGB_8888, false)
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun textoBotaoPrincipal(): String = when {
+        !rotaIniciada -> "Iniciar"
+        pausaManual || pausaPinoPerdido -> "Retomar"
+        else -> "Pausar"
+    }
+
+    private fun atualizarBotaoPrincipal() {
+        handler.post { botaoPrincipal?.text = textoBotaoPrincipal() }
     }
 
     private fun registrarLogCaptura(mensagem: String) {
@@ -334,33 +449,47 @@ class BotService : Service() {
         }
         ajustarRotacao()
         val agora = SystemClock.uptimeMillis()
-        val frame = copiarImagemAtual()
-        if (frame == null) {
-            if (!pausaManual && ultimoFrameEm > 0L && agora - ultimoFrameEm > 3000L) {
-                val segsSemImagem = (agora - ultimoFrameEm) / 1000L
-                registrarStatus("SEM IMAGEM há ${segsSemImagem}s - recriando captura")
-                if (agora - ultimaRecriacaoCapturaEm >= 5000L) {
-                    ultimaRecriacaoCapturaEm = agora
-                    val m = DisplayMetrics()
-                    @Suppress("DEPRECATION")
-                    (getSystemService(WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealMetrics(m)
-                    recriarLeitorCaptura(m)
-                    registrarLogCaptura("SEM IMAGEM há ${segsSemImagem}s - recriando captura (${m.widthPixels}x${m.heightPixels})")
+        val semFrameMs = if (ultimoFrameEm > 0L) agora - ultimoFrameEm else 0L
+        var frameNovo = copiarImagemAtual()
+        var reaproveitado = false
+        if (frameNovo == null && !pausaManual && ultimoFrameEm > 0L && semFrameMs <= REUSO_QUADRO_MS) {
+            // Tela parada: o leitor não entrega quadro novo. Reaproveita o último por até 3 s, só para análise.
+            frameNovo = copiaDoUltimoQuadro()
+            reaproveitado = frameNovo != null
+        }
+        if (frameNovo == null) {
+            if (!pausaManual && ultimoFrameEm > 0L && semFrameMs > REUSO_QUADRO_MS) {
+                val segsSemImagem = semFrameMs / 1000L
+                if (semFrameMs > RECRIAR_CAPTURA_SEM_FRAME_MS) {
+                    registrarStatus("SEM IMAGEM há ${segsSemImagem}s - recriando captura")
+                    if (agora - ultimaRecriacaoCapturaEm >= 5000L) {
+                        ultimaRecriacaoCapturaEm = agora
+                        val m = DisplayMetrics()
+                        @Suppress("DEPRECATION")
+                        (getSystemService(WINDOW_SERVICE) as WindowManager).defaultDisplay.getRealMetrics(m)
+                        recriarLeitorCaptura(m)
+                        registrarLogCaptura("SEM IMAGEM há ${segsSemImagem}s - recriando captura (${m.widthPixels}x${m.heightPixels})")
+                    }
+                } else {
+                    registrarStatus("SEM IMAGEM há ${segsSemImagem}s - aguardando quadro novo")
                 }
             }
             return
         }
-        ultimoFrameEm = agora
+        val frame: Bitmap = frameNovo
+        if (!reaproveitado) {
+            // Só quadro real atualiza o relógio de "último quadro" e a imagem usada nos logs.
+            ultimoFrameEm = agora
+            try {
+                val copiaLog = frame.copy(Bitmap.Config.ARGB_8888, false)
+                if (copiaLog != null) {
+                    ultimoFrameLog?.recycle()
+                    ultimoFrameLog = copiaLog
+                }
+            } catch (_: Exception) {}
+        }
 
-
-        try {
-            val copiaLog = frame.copy(Bitmap.Config.ARGB_8888, false)
-            if (copiaLog != null) {
-                ultimoFrameLog?.recycle()
-                ultimoFrameLog = copiaLog
-            }
-        } catch (_: Exception) {}
-
+        val geracaoNoInicio = geracaoRetomada
         try {
             val resultado = if (pausaManual) {
                 pararAlarme()
@@ -369,6 +498,10 @@ class BotService : Service() {
                 Rota.passoSoAlarme(frame, this, uriSomAlerta, volumeAlerta)
             } else {
                 Rota.passo(frame, this, usaLoot, usaAlerta, uriSomAlerta, volumeAlerta) { x, y -> tocarNaTela(x, y) }
+            }
+            if (resultado.contains("PAUSADO_POR_PINO_PERDIDO") && !pausaPinoPerdido && geracaoNoInicio == geracaoRetomada) {
+                pausaPinoPerdido = true
+                atualizarBotaoPrincipal()
             }
             if (!pausaManual) EstadoBotController.definir(EstadoBot.NAVEGANDO)
             registrarStatus(if (ultimoToque.isEmpty()) resultado else "$resultado | $ultimoToque")
@@ -398,6 +531,7 @@ class BotService : Service() {
     }
 
     private fun statusCurto(texto: String): String {
+        if (texto.contains("PAUSADO_POR_PINO_PERDIDO")) return "Pino perdido - toque Retomar"
         val limpa = texto.substringBefore(" | ").trim()
         if (limpa == "Pausado") return "Pausado"
         if (limpa.startsWith("RESYNC", ignoreCase = true)) return "Reajustando pino"
@@ -479,7 +613,7 @@ class BotService : Service() {
 
             val linha = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
             val btnIniciarPausar = Button(this).apply {
-                text = "Iniciar"
+                text = textoBotaoPrincipal()
                 setOnClickListener {
                     if (!rotaIniciada) {
                         Rota.resetar()
@@ -490,10 +624,21 @@ class BotService : Service() {
                         rotaIniciada = true
                         rodando = true
                         pausaManual = false
+                        pausaPinoPerdido = false
                         EstadoBotController.definir(EstadoBot.NAVEGANDO)
-                        text = "Pausar"
+                        text = textoBotaoPrincipal()
                         atualizarContadoresOverlay()
                         workerHandler.post(ciclo)
+                    } else if (pausaPinoPerdido && !pausaManual) {
+                        // Pausado por pino perdido: um toque retoma e silencia o alarme.
+                        Rota.cancelarAutoloot = false
+                        geracaoRetomada++
+                        Rota.retomarPausaPinoPerdido()
+                        pausaPinoPerdido = false
+                        BotService.pararAlarme()
+                        EstadoBotController.definir(EstadoBot.NAVEGANDO)
+                        text = textoBotaoPrincipal()
+                        atualizarContadoresOverlay()
                     } else {
                         val novaPausa = !pausaManual
                         if (novaPausa) {
@@ -503,15 +648,18 @@ class BotService : Service() {
                         } else {
                             Rota.cancelarAutoloot = false
                             pausaManual = false
+                            pausaPinoPerdido = false
                             EstadoBotController.definir(EstadoBot.NAVEGANDO)
+                            geracaoRetomada++
                             Rota.retomarPausaPinoPerdido()
                             BotService.pararAlarme()
                         }
-                        text = if (pausaManual) "Retomar" else "Pausar"
+                        text = textoBotaoPrincipal()
                         atualizarContadoresOverlay()
                     }
                 }
             }
+            botaoPrincipal = btnIniciarPausar
             val btnParar = Button(this).apply {
                 text = "Parar"
                 setOnClickListener { pararTudo("Encerrado.") }
@@ -572,6 +720,7 @@ class BotService : Service() {
             try { (getSystemService(WINDOW_SERVICE) as WindowManager).removeView(it) } catch (_: Exception) {}
             overlay = null
         }
+        botaoPrincipal = null
     }
 
     private fun liberarCaptura() {
@@ -581,6 +730,7 @@ class BotService : Service() {
             virtualDisplay = null
             try { imageReader?.close() } catch (_: Exception) {}
             imageReader = null
+            try { projection?.unregisterCallback(projectionCallback) } catch (_: Exception) {}
             try { projection?.stop() } catch (_: Exception) {}
             projection = null
         }
@@ -590,18 +740,20 @@ class BotService : Service() {
 
     private fun pararTudo(motivo: String) {
         if (!encerramentoEmAndamento.compareAndSet(false, true)) return
+        val terminouComErro = EstadoBotController.atual == EstadoBot.ERRO
         EstadoBotController.definir(EstadoBot.ENCERRANDO)
         Rota.cancelarAutoloot = true
         rodando = false
         rotaIniciada = false
         pausaManual = true
+        pausaPinoPerdido = false
         workerHandler.removeCallbacks(ciclo)
         liberarCaptura()
         removerOverlay()
         registrarStatus(motivo)
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
-        EstadoBotController.resetar()
+        if (terminouComErro) EstadoBotController.definir(EstadoBot.ERRO) else EstadoBotController.resetar()
     }
 
     private fun iniciarNotificacao() {

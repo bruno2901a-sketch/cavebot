@@ -1,8 +1,10 @@
 package com.rotabot
 
+import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.media.RingtoneManager
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
@@ -21,6 +23,7 @@ import android.widget.Toast
 
 class MainActivity : Activity() {
     private val codigoCaptura = 42
+    private val codigoNotificacoes = 43
     private var dadosCaptura: Intent? = null
     private var resultadoCaptura = 0
     private var uriSomSelecionado: String = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)?.toString() ?: ""
@@ -321,6 +324,13 @@ class MainActivity : Activity() {
             addView(tela)
         }
         setContentView(rolagem)
+
+        // Android 13+: POST_NOTIFICATIONS precisa ser pedida em tempo de execução (a notificação do serviço em primeiro plano depende dela).
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), codigoNotificacoes)
+        }
     }
 
     override fun onResume() {

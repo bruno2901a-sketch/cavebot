@@ -32,6 +32,7 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
 
       - name: Publicar APK na aba Releases
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ultimo-rotabot
