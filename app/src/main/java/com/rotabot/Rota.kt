@@ -71,6 +71,8 @@ private data class DeslocamentoClique(
 private class EstadoPino {
     var quadrosChegada = 0
     var quadrosSumidoVerde = 0
+    var quadrosDistEstavel = 0
+    var ultimaDistObservada = -1f
     var ultimaDist = -1f
     var ultimaDistVerde = -1f
     var menorDistVerde = -1f
@@ -87,6 +89,8 @@ private class EstadoPino {
         val falhasAnteriores = falhasPino
         quadrosChegada = 0
         quadrosSumidoVerde = 0
+        quadrosDistEstavel = 0
+        ultimaDistObservada = -1f
         ultimaDist = -1f
         ultimaDistVerde = -1f
         menorDistVerde = -1f
@@ -196,6 +200,12 @@ object Rota {
     private var quadrosSumidoVerde: Int
         get() = estadoPino.quadrosSumidoVerde
         set(v) { estadoPino.quadrosSumidoVerde = v }
+    private var quadrosDistEstavel: Int
+        get() = estadoPino.quadrosDistEstavel
+        set(v) { estadoPino.quadrosDistEstavel = v }
+    private var ultimaDistObservada: Float
+        get() = estadoPino.ultimaDistObservada
+        set(v) { estadoPino.ultimaDistObservada = v }
     private var ultimaDist: Float
         get() = estadoPino.ultimaDist
         set(v) { estadoPino.ultimaDist = v }
@@ -236,8 +246,7 @@ object Rota {
     private var ultimoRecorteMinimapaH = 0
     private var minimapaParadoDesde = 0L
     private var ultimaDiffMinimapa = 0.0
-    private var quadrosSemRotaSeguidos = 0
-    private var ignorarSemRotaAte = 0L
+    private var ultimaToleranciaPx = 0f
     private var ultimaAvaliacaoTemplate: AvaliacaoPino? = null
 
     @Volatile
@@ -308,8 +317,7 @@ object Rota {
         ultimoRecorteMinimapaH = 0
         minimapaParadoDesde = 0L
         ultimaDiffMinimapa = 0.0
-        quadrosSemRotaSeguidos = 0
-        ignorarSemRotaAte = 0L
+        ultimaToleranciaPx = 0f
         ultimaAvaliacaoTemplate = null
         melhorScore = 0.0
         BatalhaEngine.resetar()
@@ -331,6 +339,29 @@ object Rota {
         minimapaParadoDesde = 0L
         alarmeSemChegadaTocando = false
         BotService.pararAlarme()
+    }
+
+    private fun calcularToleranciaChegada(larguraTela: Int): Float {
+        return max(
+            Cal.TOLERANCIA_CHEGADA_CASAS * pixelsPorCasa,
+            34f * (larguraTela / 2460f)
+        )
+    }
+
+    private fun atualizarEstabilidadeDistancia(distAtual: Float) {
+        if (distAtual < 0f) return
+        if (ultimaDistObservada >= 0f && abs(distAtual - ultimaDistObservada) <= 1.5f) {
+            quadrosDistEstavel++
+        } else {
+            quadrosDistEstavel = 0
+        }
+        ultimaDistObservada = distAtual
+    }
+
+    private fun estaParado(estadoMini: EstadoComparacaoMinimapa, tempoParadoMs: Long): Boolean {
+        val paradoPorMinimapa = !estadoMini.emMovimento && tempoParadoMs >= Cal.TEMPO_MINIMO_PARADO_CHEGADA_MS
+        val paradoPorDistancia = quadrosDistEstavel >= 2
+        return paradoPorMinimapa || paradoPorDistancia
     }
 
     /**
@@ -452,7 +483,11 @@ object Rota {
         distAtual: Float,
         agora: Long
     ) {
+        val estabilidadePreservada = quadrosDistEstavel
+        val distObservadaPreservada = ultimaDistObservada
         estadoPino.reiniciar(preservarFalhas = true)
+        quadrosDistEstavel = estabilidadePreservada
+        ultimaDistObservada = distObservadaPreservada
         fase = FaseNavegacao.CAMINHANDO
         ultimoVerdeRel = relPos
         ultimoPosPinoConhecidaRel = relPos
@@ -468,14 +503,14 @@ object Rota {
 
     private fun chegouNoPino(
         dist: Float,
+        toleranciaChegada: Float,
         estadoMini: EstadoComparacaoMinimapa,
         tempoParadoMs: Long,
         vistoVerdeNesteTrecho: Boolean
     ): Boolean {
-        val toleranciaCasaPx = Cal.TOLERANCIA_CHEGADA_CASAS * pixelsPorCasa
-        val minimapaParadoSuficiente = !estadoMini.emMovimento && tempoParadoMs >= Cal.TEMPO_MINIMO_PARADO_CHEGADA_MS
-        val dentroTolerancia = dist >= 0f && dist <= toleranciaCasaPx
-        if (dentroTolerancia && minimapaParadoSuficiente && vistoVerdeNesteTrecho) {
+        val parado = estaParado(estadoMini, tempoParadoMs)
+        val dentroTolerancia = dist >= 0f && dist <= toleranciaChegada
+        if (dentroTolerancia && parado && vistoVerdeNesteTrecho) {
             quadrosChegada++
             return quadrosChegada >= 2
         }
@@ -544,8 +579,6 @@ object Rota {
         tempoMaxPinoMs = 15000L
         pausadoAte = agora + 200L
         estadoPino.reiniciar(preservarFalhas = false)
-        quadrosSemRotaSeguidos = 0
-        ignorarSemRotaAte = 0L
     }
 
     /**
@@ -571,36 +604,10 @@ object Rota {
         iniciouCaminhadaEm = 0L
         fase = FaseNavegacao.ESCOLHER
         estadoPino.reiniciar(preservarFalhas = true)
-        quadrosSemRotaSeguidos = 0
         return formatarLog(
             fase.name, pinoId, score, rivalTexto, ultimoQtdVerde, ultimoRgbVerde, distPx,
             "$motivo (falhas=$falhasAtuais) -> ESCOLHER"
         )
-    }
-
-    private fun temSemRota(tela: Bitmap): Boolean {
-        val x0 = (tela.width * Cal.SEM_ROTA_X0).toInt().coerceIn(0, tela.width - 1)
-        val y0 = (tela.height * Cal.SEM_ROTA_Y0).toInt().coerceIn(0, tela.height - 1)
-        val x1 = (tela.width * Cal.SEM_ROTA_X1).toInt().coerceIn(x0 + 1, tela.width)
-        val y1 = (tela.height * Cal.SEM_ROTA_Y1).toInt().coerceIn(y0 + 1, tela.height)
-
-        val rw = x1 - x0
-        val rh = y1 - y0
-        if (rw <= 0 || rh <= 0) return false
-
-        val px = IntArray(rw * rh)
-        tela.getPixels(px, 0, rw, x0, y0, rw, rh)
-
-        var pixelsTextoClaro = 0
-        for (p in px) {
-            val r = (p shr 16) and 0xFF
-            val g = (p shr 8) and 0xFF
-            val b = p and 0xFF
-            if (r >= 250 && g >= 250 && b >= 250) {
-                pixelsTextoClaro++
-            }
-        }
-        return pixelsTextoClaro in 100..600
     }
 
     private fun formatarRivalAvaliacao(av: AvaliacaoPino?): String {
@@ -634,7 +641,8 @@ object Rota {
         }
         val diffStr = "%.2f".format(ultimaDiffMinimapa)
         val dirStr = if (direcaoIda) "IDA" else "VOLTA"
-        val base = "fase=$faseNome | pino=$pinoId | direcao=$dirStr | score=$scoreStr | $rivalTexto | verde=$qtdVerde | $rgbStr | dist=$distStr | tentClique=$tentativaClique | falhas=$falhasPino | diffMini=$diffStr"
+        val tolStr = "${ultimaToleranciaPx.toInt()}px"
+        val base = "fase=$faseNome | pino=$pinoId | direcao=$dirStr | score=$scoreStr | $rivalTexto | verde=$qtdVerde | $rgbStr | dist=$distStr | tol=$tolStr | estavel=$quadrosDistEstavel | tentClique=$tentativaClique | falhas=$falhasPino | diffMini=$diffStr"
         return if (!extra.isNullOrEmpty()) "$base | $extra" else base
     }
 
@@ -788,7 +796,8 @@ object Rota {
 
         val modelo = modelos[alvo]
         val indice = modelo.indice
-        val toleranciaChegada = Cal.TOLERANCIA_CHEGADA_CASAS * pixelsPorCasa
+        val toleranciaChegada = calcularToleranciaChegada(tela.width)
+        ultimaToleranciaPx = toleranciaChegada
 
         // 5) AVISO SEM PARAR (somente som após 3 minutos sem chegada no mesmo pino, sem pausar)
         if (!alarmeSemChegadaTocando && (agora - inicioBuscaPinoAtualEm) >= AVISO_ALARME_SEM_CHEGADA_MS) {
@@ -813,20 +822,6 @@ object Rota {
         // 2) FASE CAMINHANDO
         // =========================================================================
         if (fase == FaseNavegacao.CAMINHANDO) {
-            if (agora >= ignorarSemRotaAte && temSemRota(tela)) {
-                quadrosSemRotaSeguidos++
-                if (quadrosSemRotaSeguidos >= 2) {
-                    quadrosSemRotaSeguidos = 0
-                    ignorarSemRotaAte = agora + Cal.IGNORAR_SEM_ROTA_MS
-                    return registrarFalhaPino(
-                        indice, melhorScore, formatarRivalAvaliacao(ultimaAvaliacaoTemplate),
-                        ultimaDistVerde, "nao ha rota", context, tela
-                    )
-                }
-            } else {
-                quadrosSemRotaSeguidos = 0
-            }
-
             // Se o tempo máximo do pino (tempoMaxPinoMs) estourar: não conta falha para pausar.
             // Apenas clica com o próximo deslocamento, reinicia o cronômetro da caminhada e continua.
             if (iniciouCaminhadaEm > 0L && (agora - iniciouCaminhadaEm) >= tempoMaxPinoMs) {
@@ -869,6 +864,7 @@ object Rota {
                 val absX = (x0 + verdeRel.first).toFloat()
                 val absY = (y0 + verdeRel.second).toFloat()
                 val dist = hypot((absX - cx).toDouble(), (absY - cy).toDouble()).toFloat()
+                atualizarEstabilidadeDistancia(dist)
                 ultimaDistVerde = dist
                 ultimaDist = dist
                 if (menorDistVerde < 0f || dist < menorDistVerde) {
@@ -876,7 +872,7 @@ object Rota {
                 }
 
                 // CHEGADA CONFIRMADA: única forma de avançar o alvo
-                if (chegouNoPino(dist, estadoMini, tempoParadoMs, vistoVerde)) {
+                if (chegouNoPino(dist, toleranciaChegada, estadoMini, tempoParadoMs, vistoVerde)) {
                     proximoPino(agora, "CHEGADA_CONFIRMADA", context, tela)
                     return formatarLog(
                         "CHEGOU", indice, melhorScore, formatarRivalAvaliacao(ultimaAvaliacaoTemplate),
@@ -885,8 +881,8 @@ object Rota {
                     )
                 }
 
-                val minimapaParadoSuficiente = !estadoMini.emMovimento && tempoParadoMs >= Cal.TEMPO_MINIMO_PARADO_CHEGADA_MS
-                if (dist <= toleranciaChegada && minimapaParadoSuficiente && vistoVerde) {
+                val parado = estaParado(estadoMini, tempoParadoMs)
+                if (dist <= toleranciaChegada && parado && vistoVerde) {
                     return formatarLog(
                         fase.name, indice, melhorScore, formatarRivalAvaliacao(ultimaAvaliacaoTemplate),
                         qtdVerde, rgbVerde, dist,
@@ -896,12 +892,14 @@ object Rota {
 
                 // Regra de reclique (500 ms sem mover ou minimapa parado continuamente por 500 ms)
                 var logClique = "clique=aguardando"
-                if (estadoMini.emMovimento) {
+                val paradoParaReclique = (!estadoMini.emMovimento && tempoParadoMs >= RECLIQUE_SEM_MOVER_MS) ||
+                    (quadrosDistEstavel >= 2)
+                if (estadoMini.emMovimento && quadrosDistEstavel < 2) {
                     semProgresso = 0
                     logClique = "em_movimento"
-                } else if (dist > toleranciaChegada) {
+                } else if (dist > toleranciaChegada && paradoParaReclique) {
                     val semMover500ms = !houveMovimentoDesdeClique && (agora - ultimoClique >= RECLIQUE_SEM_MOVER_MS)
-                    val parouDeNovo500ms = houveMovimentoDesdeClique && (tempoParadoMs >= RECLIQUE_SEM_MOVER_MS)
+                    val parouDeNovo500ms = houveMovimentoDesdeClique && (tempoParadoMs >= RECLIQUE_SEM_MOVER_MS || quadrosDistEstavel >= 2)
                     if (semMover500ms || parouDeNovo500ms) {
                         semProgresso++
                         cliquesVerde++
@@ -918,35 +916,37 @@ object Rota {
                     "seguindo verde | $logClique"
                 )
             } else {
-                // Bloco "verde não encontrado":
-                // Confirma chegada sob a cruz se o pino foi visto verde perto da cruz e já parou por 2 quadros seguidos.
-                if (vistoVerde &&
-                    ultimaDistVerde >= 0f &&
-                    ultimaDistVerde <= toleranciaChegada &&
-                    quadrosSumidoVerde < 6 &&
-                    chegouNoPino(ultimaDistVerde, estadoMini, tempoParadoMs, true)
-                ) {
-                    val distConfirmada = ultimaDistVerde
-                    val rgbConfirmado = ultimoRgbVerde
-                    proximoPino(agora, "CHEGADA_CONFIRMADA", context, tela)
-                    return formatarLog(
-                        "CHEGOU", indice, melhorScore, formatarRivalAvaliacao(ultimaAvaliacaoTemplate),
-                        0, rgbConfirmado, distConfirmada,
-                        "CHEGADA_CONFIRMADA sob a cruz"
-                    )
-                }
-
                 ultimoQtdVerde = 0
                 quadrosSumidoVerde++
 
                 val distRef = if (ultimaDistVerde >= 0f) ultimaDistVerde else menorDistVerde
-                val longeDaCruz = distRef < 0f || distRef > toleranciaChegada
+                // A cruz do jogador pode cobrir o pino antes de o detector verde conseguir
+                // medi-lo dentro da tolerância normal. Use uma zona de ocultação limitada,
+                // mas só confirme quando houver evidência de que o personagem parou.
+                val escalaTela = (tela.width / 2460f).coerceIn(0.35f, 1.5f)
+                val toleranciaOcultacao = max(toleranciaChegada * 1.5f, 42f * escalaTela)
+                val dentroZonaOcultacao = vistoVerde && distRef >= 0f && distRef <= toleranciaOcultacao
+                val parado = estaParado(estadoMini, tempoParadoMs)
 
-                // Se ainda não andou (ou parou) e tem posição conhecida do pino, reclica a cada 500ms
+                if (dentroZonaOcultacao && quadrosSumidoVerde >= 2 && parado &&
+                    chegouNoPino(distRef, toleranciaOcultacao, estadoMini, tempoParadoMs, true)
+                ) {
+                    val rgbConfirmado = ultimoRgbVerde
+                    proximoPino(agora, "CHEGADA_CONFIRMADA", context, tela)
+                    return formatarLog(
+                        "CHEGOU", indice, melhorScore, formatarRivalAvaliacao(ultimaAvaliacaoTemplate),
+                        0, rgbConfirmado, distRef,
+                        "CHEGADA_CONFIRMADA: pino oculto pela cruz, distancia estavel"
+                    )
+                }
+
+                val longeDaCruz = !dentroZonaOcultacao
                 val posConhecida = ultimoPosPinoConhecidaRel
-                if (!estadoMini.emMovimento && longeDaCruz && posConhecida != null) {
+                val paradoParaReclique = (!estadoMini.emMovimento && tempoParadoMs >= RECLIQUE_SEM_MOVER_MS) ||
+                    (quadrosDistEstavel >= 2)
+                if (paradoParaReclique && longeDaCruz && posConhecida != null) {
                     val semMover500ms = !houveMovimentoDesdeClique && (agora - ultimoClique >= RECLIQUE_SEM_MOVER_MS)
-                    val parouDeNovo500ms = houveMovimentoDesdeClique && (tempoParadoMs >= RECLIQUE_SEM_MOVER_MS)
+                    val parouDeNovo500ms = houveMovimentoDesdeClique && (tempoParadoMs >= RECLIQUE_SEM_MOVER_MS || quadrosDistEstavel >= 2)
                     if (semMover500ms || parouDeNovo500ms) {
                         val pxAlvo = (x0 + posConhecida.first).toFloat()
                         val pyAlvo = (y0 + posConhecida.second).toFloat()
@@ -956,7 +956,7 @@ object Rota {
                         return formatarLog(
                             fase.name, indice, melhorScore, formatarRivalAvaliacao(ultimaAvaliacaoTemplate),
                             0, ultimoRgbVerde, distRef,
-                            "verde ausente -> reclique=(${toque.first.toInt()},${toque.second.toInt()})"
+                            "verde ausente -> reclique=(" + toque.first.toInt() + "," + toque.second.toInt() + ")"
                         )
                     }
                 }
@@ -964,25 +964,17 @@ object Rota {
                 if (longeDaCruz && quadrosSumidoVerde >= 6) {
                     return registrarFalhaPino(
                         indice, melhorScore, formatarRivalAvaliacao(ultimaAvaliacaoTemplate),
-                        distRef, "pino sumiu longe da cruz ($quadrosSumidoVerde quadros)", context, tela
+                        distRef, "pino sumiu longe da cruz ($" + "quadrosSumidoVerde quadros)", context, tela
                     )
                 }
 
-                if (!longeDaCruz && quadrosSumidoVerde >= 6) {
-                    fase = FaseNavegacao.ESCOLHER
-                    iniciouCaminhadaEm = 0L
-                    estadoPino.reiniciar(preservarFalhas = true)
-                    return formatarLog(
-                        fase.name, indice, melhorScore, formatarRivalAvaliacao(ultimaAvaliacaoTemplate),
-                        0, ultimoRgbVerde, distRef,
-                        "pino sumiu perto da cruz sem confirmar -> ESCOLHER sem avancar"
-                    )
-                }
-
+                // Não volta para ESCOLHER quando o pino some junto à cruz. Mantém CAMINHANDO
+                // e aguarda a confirmação; assim não procura eternamente o mesmo pino já alcançado.
                 return formatarLog(
                     fase.name, indice, melhorScore, formatarRivalAvaliacao(ultimaAvaliacaoTemplate),
                     0, ultimoRgbVerde, distRef,
-                    "verde ausente ($quadrosSumidoVerde/6)"
+                    if (dentroZonaOcultacao) "pino sob a cruz: aguardando parada/confirmacao ($" + "quadrosChegada/2)"
+                    else "verde ausente ($" + "quadrosSumidoVerde/6)"
                 )
             }
         }
@@ -990,10 +982,12 @@ object Rota {
         // =========================================================================
         // 1) FASE ESCOLHER
         // =========================================================================
+        val paradoParaClique = (!estadoMini.emMovimento && tempoParadoMs >= RECLIQUE_SEM_MOVER_MS) ||
+            (quadrosDistEstavel >= 2)
         val podeClicarAgora = ultimoClique == 0L ||
-            (!estadoMini.emMovimento &&
+            (paradoParaClique &&
                 ((!houveMovimentoDesdeClique && agora - ultimoClique >= RECLIQUE_SEM_MOVER_MS) ||
-                    (houveMovimentoDesdeClique && tempoParadoMs >= RECLIQUE_SEM_MOVER_MS)))
+                    (houveMovimentoDesdeClique && (tempoParadoMs >= RECLIQUE_SEM_MOVER_MS || quadrosDistEstavel >= 2))))
 
         // Verifica se o pino alvo já está verde no minimapa e validado pelo template
         val verdes = buscarComponentesVerdes(tela, x0, y0, x1, y1)
@@ -1007,6 +1001,7 @@ object Rota {
                 val absVx = (x0 + verde.posicao.first).toFloat()
                 val absVy = (y0 + verde.posicao.second).toFloat()
                 val distVerde = hypot((absVx - cx).toDouble(), (absVy - cy).toDouble()).toFloat()
+                atualizarEstabilidadeDistancia(distVerde)
 
                 if (distVerde > toleranciaChegada && podeClicarAgora) {
                     val toque = clicarComDeslocamento(
@@ -1055,11 +1050,12 @@ object Rota {
         }
 
         val dist = hypot((achado.first - cx).toDouble(), (achado.second - cy).toDouble()).toFloat()
+        atualizarEstabilidadeDistancia(dist)
         ultimoPosPinoConhecidaRel = Pair(achado.first - x0, achado.second - y0)
 
         // Se o pino já estiver dentro da tolerância da cruz ao ser escolhido, verifica chegada confirmada
         if (dist <= toleranciaChegada) {
-            if (chegouNoPino(dist, estadoMini, tempoParadoMs, vistoVerdeNesteTrecho = true)) {
+            if (chegouNoPino(dist, toleranciaChegada, estadoMini, tempoParadoMs, vistoVerdeNesteTrecho = true)) {
                 proximoPino(agora, "CHEGADA_CONFIRMADA", context, tela)
                 return formatarLog(
                     "CHEGOU", indice, scoreAtual, rivalTexto,
