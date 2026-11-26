@@ -964,7 +964,7 @@ object Rota {
                 if (longeDaCruz && quadrosSumidoVerde >= 6) {
                     return registrarFalhaPino(
                         indice, melhorScore, formatarRivalAvaliacao(ultimaAvaliacaoTemplate),
-                        distRef, "pino sumiu longe da cruz ($" + "quadrosSumidoVerde quadros)", context, tela
+                        distRef, "pino sumiu longe da cruz ($quadrosSumidoVerde quadros)", context, tela
                     )
                 }
 
@@ -973,8 +973,8 @@ object Rota {
                 return formatarLog(
                     fase.name, indice, melhorScore, formatarRivalAvaliacao(ultimaAvaliacaoTemplate),
                     0, ultimoRgbVerde, distRef,
-                    if (dentroZonaOcultacao) "pino sob a cruz: aguardando parada/confirmacao ($" + "quadrosChegada/2)"
-                    else "verde ausente ($" + "quadrosSumidoVerde/6)"
+                    if (dentroZonaOcultacao) "pino sob a cruz: aguardando parada/confirmacao ($quadrosChegada/2)"
+                    else "verde ausente ($quadrosSumidoVerde/6)"
                 )
             }
         }
