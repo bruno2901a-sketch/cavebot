@@ -119,6 +119,22 @@ private fun ehPixelVerdeCaixa(p: Int): Boolean {
     return g > 190 && r < 90 && b < 90
 }
 
+/**
+ * ÁREA PROTEGIDA — ROTA/PINOS E BATALHA (VERSÃO ESTÁVEL)
+ *
+ * O usuário validou 30 sessões reais, todas funcionando na parte de localizar
+ * pinos, caminhar, reconhecer chegada, avançar, fazer ida/volta e pausar/retomar
+ * a navegação durante a batalha. O menu de batalha tem um pequeno atraso de
+ * leitura conhecido e aceito; o usuário usa o target do jogo, então esse atraso
+ * não prejudica o funcionamento observado.
+ *
+ * NÃO alterar/refatorar esta lógica, seus critérios, tolerâncias ou temporizações
+ * sem autorização explícita do usuário. Mudanças em autoloot ou outras funções
+ * não autorizam alterações aqui. Se uma mudança for autorizada, fazê-la de forma
+ * mínima e validar a compilação e o comportamento.
+ *
+ * Registro da versão validada: a5d4111323981cc4e1b71a9ecde8e728c241a230.
+ */
 object Rota {
     @Volatile
     var limiteAlarmeMs: Long = 30000L
