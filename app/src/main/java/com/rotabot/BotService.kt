@@ -169,11 +169,6 @@ class BotService : Service() {
     private var statusView: TextView? = null
     private var contadorView: TextView? = null
     private var botaoPrincipal: Button? = null
-    @Volatile private var pausaPinoPerdido = false
-    // Incrementado (só na thread principal) a cada retomada pedida pelo usuário. Um passo que já estava em andamento
-    // quando o usuário retomou pode devolver o texto antigo "PAUSADO_POR_PINO_PERDIDO"; sem este contador ele
-    // reativaria a pausa e o botão voltaria a "Retomar" com a rota já andando.
-    @Volatile private var geracaoRetomada = 0
     @Volatile private var alarmeSegAtual = 30
     @Volatile private var statusAtual = "Aguardando início"
     @Volatile private var rodando = false
@@ -226,10 +221,7 @@ class BotService : Service() {
             ACAO_RETOMAR -> {
                 Rota.cancelarAutoloot = false
                 pausaManual = false
-                pausaPinoPerdido = false
                 EstadoBotController.definir(if (rodando) EstadoBot.NAVEGANDO else EstadoBot.PRONTO)
-                geracaoRetomada++
-                Rota.retomarPausaPinoPerdido()
                 BotService.pararAlarme()
                 atualizarBotaoPrincipal()
             }
@@ -348,7 +340,6 @@ class BotService : Service() {
         rodando = false
         rotaIniciada = false
         pausaManual = false
-        pausaPinoPerdido = false
         processando = false
         ultimoToque = ""
         ultimoFrameEm = 0L
@@ -391,7 +382,7 @@ class BotService : Service() {
 
     private fun textoBotaoPrincipal(): String = when {
         !rotaIniciada -> "Iniciar"
-        pausaManual || pausaPinoPerdido -> "Retomar"
+        pausaManual -> "Retomar"
         else -> "Pausar"
     }
 
@@ -436,17 +427,8 @@ class BotService : Service() {
     }
 
     private fun executarCiclo() {
-        if (processando) {
-            if (pausaManual) return
-            if (SystemClock.uptimeMillis() - toqueDesde < 8000L) return
-            ultimoToque = "Gesto sem retorno após 8s; rota pausada. Aguardando Android liberar toque"
-            pausaManual = true
-            EstadoBotController.definir(EstadoBot.PAUSADO)
-            Rota.cancelarAutoloot = true
-            registrarStatus(ultimoToque)
-            LogRota.registrarPasso(this, ultimoToque, ultimoFrameLog)
-            return
-        }
+        // Atraso no retorno do gesto bloqueia novos toques, mas nunca pausa a rota.
+        if (processando || ToqueService.temGestoEmAndamento()) return
         ajustarRotacao()
         val agora = SystemClock.uptimeMillis()
         val semFrameMs = if (ultimoFrameEm > 0L) agora - ultimoFrameEm else 0L
@@ -489,7 +471,6 @@ class BotService : Service() {
             } catch (_: Exception) {}
         }
 
-        val geracaoNoInicio = geracaoRetomada
         try {
             val resultado = if (pausaManual) {
                 pararAlarme()
@@ -498,10 +479,6 @@ class BotService : Service() {
                 Rota.passoSoAlarme(frame, this, uriSomAlerta, volumeAlerta)
             } else {
                 Rota.passo(frame, this, usaLoot, usaAlerta, uriSomAlerta, volumeAlerta) { x, y -> tocarNaTela(x, y) }
-            }
-            if (resultado.contains("PAUSADO_POR_PINO_PERDIDO") && !pausaPinoPerdido && geracaoNoInicio == geracaoRetomada) {
-                pausaPinoPerdido = true
-                atualizarBotaoPrincipal()
             }
             if (!pausaManual) EstadoBotController.definir(EstadoBot.NAVEGANDO)
             registrarStatus(if (ultimoToque.isEmpty()) resultado else "$resultado | $ultimoToque")
@@ -531,7 +508,6 @@ class BotService : Service() {
     }
 
     private fun statusCurto(texto: String): String {
-        if (texto.contains("PAUSADO_POR_PINO_PERDIDO")) return "Pino perdido - toque Retomar"
         val limpa = texto.substringBefore(" | ").trim()
         if (limpa == "Pausado") return "Pausado"
         if (limpa.startsWith("RESYNC", ignoreCase = true)) return "Reajustando pino"
@@ -624,8 +600,7 @@ class BotService : Service() {
                         rotaIniciada = true
                         rodando = true
                         pausaManual = false
-                        pausaPinoPerdido = false
-                        EstadoBotController.definir(EstadoBot.NAVEGANDO)
+                                EstadoBotController.definir(EstadoBot.NAVEGANDO)
                         text = textoBotaoPrincipal()
                         atualizarContadoresOverlay()
                         workerHandler.post(ciclo)
@@ -634,8 +609,7 @@ class BotService : Service() {
                         Rota.cancelarAutoloot = false
                         geracaoRetomada++
                         Rota.retomarPausaPinoPerdido()
-                        pausaPinoPerdido = false
-                        BotService.pararAlarme()
+                                BotService.pararAlarme()
                         EstadoBotController.definir(EstadoBot.NAVEGANDO)
                         text = textoBotaoPrincipal()
                         atualizarContadoresOverlay()
@@ -648,8 +622,7 @@ class BotService : Service() {
                         } else {
                             Rota.cancelarAutoloot = false
                             pausaManual = false
-                            pausaPinoPerdido = false
-                            EstadoBotController.definir(EstadoBot.NAVEGANDO)
+                                        EstadoBotController.definir(EstadoBot.NAVEGANDO)
                             geracaoRetomada++
                             Rota.retomarPausaPinoPerdido()
                             BotService.pararAlarme()
@@ -746,7 +719,6 @@ class BotService : Service() {
         rodando = false
         rotaIniciada = false
         pausaManual = true
-        pausaPinoPerdido = false
         workerHandler.removeCallbacks(ciclo)
         liberarCaptura()
         removerOverlay()
