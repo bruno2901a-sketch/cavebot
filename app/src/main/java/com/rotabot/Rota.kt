@@ -687,6 +687,32 @@ object Rota {
             val linhaVersao = "VERSAO Rota ${BuildConfig.VERSION_NAME} | MODO=SO_NAVEGACAO | MARGEM_PINO=${"%.2f".format(Cal.MARGEM_PINO)} | LIMIAR_COR_ALVO=${"%.2f".format(Cal.LIMIAR_COR_ALVO)} | LIMIAR=${"%.2f".format(Cal.LIMIAR)} | LIMIAR_VERDE=${"%.2f".format(Cal.LIMIAR_VERDE)} | MARGEM_VERDE=${"%.2f".format(Cal.MARGEM_VERDE)} | RECLIQUE_SEM_MOVER=${RECLIQUE_SEM_MOVER_MS}ms | tela=${tela.width}x${tela.height}"
             LogRota.registrarPasso(context, linhaVersao, tela)
         }
+        // A batalha confirmada interrompe a navegação. Quando o detector confirma
+        // o fim (quadros consecutivos sem Pokémon), o próximo ciclo volta à rota.
+        if (tela.height > tela.width) {
+            val texto = "CELULAR EM RETRATO (pausado)"
+            LogRota.registrarPasso(context, texto, tela)
+            return texto
+        }
+        val agora = SystemClock.uptimeMillis()
+        val estadoBatalha = BatalhaEngine.atualizar(
+            tela,
+            agora,
+            context,
+            if (usaAlerta) limiteAlarmeMs else null
+        )
+        if (estadoBatalha.iniciouAgora) lutas++
+        if (estadoBatalha.lutaConfirmada) {
+            if (estadoBatalha.alarmeDevido) {
+                BotService.tocarAlarme(context, uriSom, volume)
+            } else {
+                BotService.pararAlarme()
+            }
+            val texto = "LUTA ${(agora - estadoBatalha.inicioLutaMs) / 1000L}s - navegação aguardando"
+            LogRota.registrarPasso(context, texto, tela)
+            return texto
+        }
+        BotService.pararAlarme()
         val texto = passoInterno(tela, context, tocar)
         LogRota.registrarPasso(context, texto, tela)
         return texto
@@ -961,8 +987,7 @@ object Rota {
                 return formatarLog(
                     fase.name, indice, melhorScore, formatarRivalAvaliacao(ultimaAvaliacaoTemplate),
                     0, ultimoRgbVerde, distRef,
-                    if (dentroZonaOcultacao) "pino sob a cruz: aguardando parada/confirmacao ($quadrosChegada/2)"
-                    else "verde ausente ($quadrosSumidoVerde/6)"
+                    "verde ausente ($quadrosSumidoVerde/6)"
                 )
             }
         }
