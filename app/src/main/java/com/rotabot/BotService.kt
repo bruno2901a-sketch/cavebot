@@ -600,19 +600,10 @@ class BotService : Service() {
                         rotaIniciada = true
                         rodando = true
                         pausaManual = false
-                                EstadoBotController.definir(EstadoBot.NAVEGANDO)
-                        text = textoBotaoPrincipal()
-                        atualizarContadoresOverlay()
-                        workerHandler.post(ciclo)
-                    } else if (pausaPinoPerdido && !pausaManual) {
-                        // Pausado por pino perdido: um toque retoma e silencia o alarme.
-                        Rota.cancelarAutoloot = false
-                        geracaoRetomada++
-                        Rota.retomarPausaPinoPerdido()
-                                BotService.pararAlarme()
                         EstadoBotController.definir(EstadoBot.NAVEGANDO)
                         text = textoBotaoPrincipal()
                         atualizarContadoresOverlay()
+                        workerHandler.post(ciclo)
                     } else {
                         val novaPausa = !pausaManual
                         if (novaPausa) {
@@ -622,9 +613,7 @@ class BotService : Service() {
                         } else {
                             Rota.cancelarAutoloot = false
                             pausaManual = false
-                                        EstadoBotController.definir(EstadoBot.NAVEGANDO)
-                            geracaoRetomada++
-                            Rota.retomarPausaPinoPerdido()
+                            EstadoBotController.definir(EstadoBot.NAVEGANDO)
                             BotService.pararAlarme()
                         }
                         text = textoBotaoPrincipal()
