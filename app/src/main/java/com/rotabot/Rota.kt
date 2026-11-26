@@ -871,22 +871,14 @@ object Rota {
                     menorDistVerde = dist
                 }
 
-                // CHEGADA CONFIRMADA: única forma de avançar o alvo
-                if (chegouNoPino(dist, toleranciaChegada, estadoMini, tempoParadoMs, vistoVerde)) {
-                    proximoPino(agora, "CHEGADA_CONFIRMADA", context, tela)
+                // Chegou à zona do pino: avança imediatamente, sem exigir que o minimapa pare.
+                // Isso também evita ficar preso quando o ícone fica sob a cruz ou animação de batalha.
+                if (dist <= toleranciaChegada) {
+                    proximoPino(agora, "CHEGADA_POR_PROXIMIDADE", context, tela)
                     return formatarLog(
                         "CHEGOU", indice, melhorScore, formatarRivalAvaliacao(ultimaAvaliacaoTemplate),
                         qtdVerde, rgbVerde, dist,
-                        "CHEGADA_CONFIRMADA (quadrosChegada>=2)"
-                    )
-                }
-
-                val parado = estaParado(estadoMini, tempoParadoMs)
-                if (dist <= toleranciaChegada && parado && vistoVerde) {
-                    return formatarLog(
-                        fase.name, indice, melhorScore, formatarRivalAvaliacao(ultimaAvaliacaoTemplate),
-                        qtdVerde, rgbVerde, dist,
-                        "confirmando chegada (quadro $quadrosChegada/2)"
+                        "CHEGADA_POR_PROXIMIDADE: dentro da zona do pino"
                     )
                 }
 
@@ -919,28 +911,24 @@ object Rota {
                 ultimoQtdVerde = 0
                 quadrosSumidoVerde++
 
-                val distRef = if (ultimaDistVerde >= 0f) ultimaDistVerde else menorDistVerde
-                // A cruz do jogador pode cobrir o pino antes de o detector verde conseguir
-                // medi-lo dentro da tolerância normal. Use uma zona de ocultação limitada,
-                // mas só confirme quando houver evidência de que o personagem parou.
-                val escalaTela = (tela.width / 2460f).coerceIn(0.35f, 1.5f)
-                val toleranciaOcultacao = max(toleranciaChegada * 1.5f, 42f * escalaTela)
-                val dentroZonaOcultacao = vistoVerde && distRef >= 0f && distRef <= toleranciaOcultacao
-                val parado = estaParado(estadoMini, tempoParadoMs)
+                val distRef = ultimaDistVerde
+                // Se o verde sumiu depois de o jogador entrar na zona do pino, conserva
+                // a última distância válida. O ícone pode estar coberto pela cruz ou pela
+                // sobreposição da batalha; não é necessário esperar o minimapa parar.
+                val pinoOcultoJaNaZona = vistoVerde &&
+                    distRef >= 0f && distRef <= toleranciaChegada
 
-                if (dentroZonaOcultacao && quadrosSumidoVerde >= 2 && parado &&
-                    chegouNoPino(distRef, toleranciaOcultacao, estadoMini, tempoParadoMs, true)
-                ) {
+                if (pinoOcultoJaNaZona) {
                     val rgbConfirmado = ultimoRgbVerde
-                    proximoPino(agora, "CHEGADA_CONFIRMADA", context, tela)
+                    proximoPino(agora, "CHEGADA_PINO_OCULTO", context, tela)
                     return formatarLog(
                         "CHEGOU", indice, melhorScore, formatarRivalAvaliacao(ultimaAvaliacaoTemplate),
                         0, rgbConfirmado, distRef,
-                        "CHEGADA_CONFIRMADA: pino oculto pela cruz, distancia estavel"
+                        "CHEGADA_PINO_OCULTO: ultima distancia valida dentro da zona; verde oculto"
                     )
                 }
 
-                val longeDaCruz = !dentroZonaOcultacao
+                val longeDaCruz = !pinoOcultoJaNaZona
                 val posConhecida = ultimoPosPinoConhecidaRel
                 val paradoParaReclique = (!estadoMini.emMovimento && tempoParadoMs >= RECLIQUE_SEM_MOVER_MS) ||
                     (quadrosDistEstavel >= 2)
@@ -1053,20 +1041,14 @@ object Rota {
         atualizarEstabilidadeDistancia(dist)
         ultimoPosPinoConhecidaRel = Pair(achado.first - x0, achado.second - y0)
 
-        // Se o pino já estiver dentro da tolerância da cruz ao ser escolhido, verifica chegada confirmada
+        // Se a rotina iniciar já em cima/perto do pino atual, reconhece a posição
+        // e passa ao próximo sem exigir uma parada adicional.
         if (dist <= toleranciaChegada) {
-            if (chegouNoPino(dist, toleranciaChegada, estadoMini, tempoParadoMs, vistoVerdeNesteTrecho = true)) {
-                proximoPino(agora, "CHEGADA_CONFIRMADA", context, tela)
-                return formatarLog(
-                    "CHEGOU", indice, scoreAtual, rivalTexto,
-                    0, null, dist,
-                    "CHEGADA_CONFIRMADA (ja no pino) | clique=NAO"
-                )
-            }
+            proximoPino(agora, "JA_ESTAVA_NA_ZONA_DO_PINO", context, tela)
             return formatarLog(
-                fase.name, indice, scoreAtual, rivalTexto,
+                "CHEGOU", indice, scoreAtual, rivalTexto,
                 0, null, dist,
-                "perto da cruz aguardando parada ($quadrosChegada/2) | clique=NAO"
+                "JA_ESTAVA_NA_ZONA_DO_PINO: avancando sem clique"
             )
         }
 
